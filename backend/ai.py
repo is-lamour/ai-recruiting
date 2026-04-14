@@ -18,18 +18,17 @@ model = genai.GenerativeModel(
     "gemini-2.5-flash",
     generation_config=genai.GenerationConfig(
         temperature=0,
-        max_output_tokens=1024,
+        max_output_tokens=4096,
     ),
 )
 
 # Короткий промпт = быстрее + дешевле
-PROMPT = """HR-рекрутер. Оцени резюме по вакансии. Ответь ТОЛЬКО JSON без markdown:
-{{"score":0-100,"category":"reject"|"consider"|"suitable","comment":"2-3 предложения на русском","questions":["вопрос1","вопрос2","вопрос3"]}}
-suitable=80+, consider=66-79, reject<66. Вопросы — конкретные, по пробелам кандидата.
+PROMPT = """Ты HR. Оцени резюме. Ответь СТРОГО одной строкой JSON без переносов, без markdown:
+{{"score":75,"category":"consider","comment":"Краткий вывод до 80 символов.","questions":["Вопрос 1?","Вопрос 2?","Вопрос 3?"]}}
+Правила: suitable>=80, consider 66-79, reject<66. Каждый вопрос до 60 символов.
 
-ВАКАНСИЯ: {vacancy_text}
-
-РЕЗЮМЕ: {resume_text}"""
+ВАКАНСИЯ:{vacancy_text}
+РЕЗЮМЕ:{resume_text}"""
 
 
 def screen_resume(vacancy_text: str, resume_text: str) -> dict:
@@ -52,8 +51,8 @@ def screen_resume(vacancy_text: str, resume_text: str) -> dict:
 
     try:
         result = json.loads(text)
-    except json.JSONDecodeError:
-        # Gemini обрезал ответ или добавил лишнее — возвращаем заглушку
+    except json.JSONDecodeError as e:
+        print(f"[AI JSON ERROR] {e} | text: {repr(text[:300])}")
         return {
             "score": 50,
             "category": "consider",
