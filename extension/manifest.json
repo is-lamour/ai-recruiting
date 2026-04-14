@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "HH Автоскрининг",
+  "version": "1.0",
+  "description": "Автоматический скрининг резюме на hh.kz",
+
+  "permissions": ["activeTab", "storage", "tabs", "scripting"],
+
+  "host_permissions": [
+    "*://*.hh.kz/*",
+    "*://hh.kz/*",
+    "http://localhost:8000/*"
+  ],
+
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "HH Автоскрининг"
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["*://*.hh.kz/*", "*://hh.kz/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+
+  "background": {
+    "service_worker": "background.js"
+  }
+}

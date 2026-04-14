@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HH Автоскрининг</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+  <header>
+    <div class="header-left">
+      <span class="logo">⚡</span>
+      <h1>HH Автоскрининг</h1>
+    </div>
+    <div class="header-right">
+      <select id="vacancy-select">
+        <option value="">— Выберите вакансию —</option>
+      </select>
+    </div>
+  </header>
+
+  <main>
+    <!-- Заглушка при отсутствии выбранной вакансии -->
+    <div id="no-vacancy-state" class="empty-screen">
+      <div class="empty-icon">📋</div>
+      <p>Выберите вакансию для просмотра кандидатов</p>
+      <small>Или запустите скрининг через расширение Chrome на странице откликов hh.kz</small>
+    </div>
+
+    <!-- Основной контент -->
+    <div id="app" class="hidden">
+
+      <!-- Статистика -->
+      <div class="stats-bar">
+        <div class="stat-card">
+          <div class="stat-num" id="stat-total">0</div>
+          <div class="stat-label">Всего</div>
+        </div>
+        <div class="stat-card suitable">
+          <div class="stat-num" id="stat-suitable">0</div>
+          <div class="stat-label">Подходят ✓</div>
+        </div>
+        <div class="stat-card consider">
+          <div class="stat-num" id="stat-consider">0</div>
+          <div class="stat-label">Подумать</div>
+        </div>
+        <div class="stat-card reject">
+          <div class="stat-num" id="stat-reject">0</div>
+          <div class="stat-label">Отказ ✗</div>
+        </div>
+      </div>
+
+      <!-- Фильтры + массовые действия -->
+      <div class="toolbar">
+        <div class="filters">
+          <button class="filter-btn active" data-filter="all">Все</button>
+          <button class="filter-btn" data-filter="suitable">Подходят</button>
+          <button class="filter-btn" data-filter="consider">Подумать</button>
+          <button class="filter-btn" data-filter="reject">Отказ</button>
+        </div>
+        <div class="bulk-actions">
+          <button id="btn-bulk-huntflow" class="btn btn-success">
+            → В Huntflow (все «Подходят»)
+          </button>
+          <button id="btn-bulk-reject" class="btn btn-danger">
+            ✕ На отказ в HH (все «Отказ»)
+          </button>
+        </div>
+      </div>
+
+      <!-- Список кандидатов -->
+      <div id="candidates-list"></div>
+
+      <div id="empty-filter-state" class="empty-screen hidden">
+        <p>Нет кандидатов в этой категории</p>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Модалка с деталями кандидата -->
+  <div id="modal-overlay" class="modal-overlay hidden">
+    <div class="modal">
+      <button class="modal-close" id="modal-close">✕</button>
+      <div id="modal-content"></div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
