@@ -2,6 +2,7 @@ const API = "http://localhost:8000";
 
 let activeTabId = null;
 let selectedVacancyId = null;
+let editingVacancyId = null;   // null = создание, id = редактирование
 let pendingActions = { to_reject: [], to_huntflow: [] };
 
 const $ = id => document.getElementById(id);
@@ -46,29 +47,27 @@ async function checkBackend() {
 async function restoreState() {
   const stored = await chrome.storage.session.get(["selectedVacancyId", "screeningProgress"]);
 
-  // 1. Восстанавливаем выбранную вакансию
   const savedVacancyId = stored.selectedVacancyId;
   if (savedVacancyId) {
     $("vacancy-select").value = savedVacancyId;
-    // Проверяем что опция реально существует
     if ($("vacancy-select").value == savedVacancyId) {
       selectedVacancyId = String(savedVacancyId);
       $("screening-section").classList.remove("hidden");
       $("btn-delete-vacancy").style.display = "";
+      $("btn-edit-vacancy").style.display = "";
       await loadPendingActions();
     }
   }
 
-  // 2. Восстанавливаем состояние скрининга
   const p = stored.screeningProgress;
   if (!p) return;
 
-  // Восстанавливаем вакансию из прогресса (если ещё не установлена)
   if (p.vacancyId && !selectedVacancyId) {
     $("vacancy-select").value = p.vacancyId;
     selectedVacancyId = String(p.vacancyId);
     $("screening-section").classList.remove("hidden");
     $("btn-delete-vacancy").style.display = "";
+    $("btn-edit-vacancy").style.display = "";
   }
 
   if (p.active) {
@@ -117,28 +116,73 @@ async function loadVacancies() {
   } catch { /* backend not running */ }
 }
 
+function openNewVacancyForm() {
+  editingVacancyId = null;
+  $("vacancy-title").value = "";
+  $("vacancy-desc").value  = "";
+  $("vacancy-url").value   = "";
+  $("new-vacancy-form").classList.toggle("hidden");
+}
+
+function openEditVacancyForm() {
+  if (!selectedVacancyId) return;
+  editingVacancyId = selectedVacancyId;
+
+  // Заполняем форму текущими данными вакансии
+  fetch(`${API}/api/vacancies`)
+    .then(r => r.json())
+    .then(vacancies => {
+      const v = vacancies.find(x => String(x.id) === String(selectedVacancyId));
+      if (!v) return;
+      $("vacancy-title").value = v.title;
+      $("vacancy-desc").value  = v.description;
+      $("vacancy-url").value   = "";
+      $("new-vacancy-form").classList.remove("hidden");
+    });
+}
+
 async function saveVacancy() {
   const title = $("vacancy-title").value.trim();
   const desc  = $("vacancy-desc").value.trim();
   if (!title || !desc) { alert("Заполните название и текст вакансии"); return; }
 
-  const res = await fetch(`${API}/api/vacancies`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title, description: desc }),
-  });
-  const v = await res.json();
+  if (editingVacancyId) {
+    // Редактирование существующей
+    const res = await fetch(`${API}/api/vacancies/${editingVacancyId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, description: desc }),
+    });
+    const v = await res.json();
 
-  const opt = document.createElement("option");
-  opt.value = v.id;
-  opt.textContent = v.title;
-  $("vacancy-select").appendChild(opt);
-  $("vacancy-select").value = v.id;
+    // Обновляем текст в селекте
+    const opt = $("vacancy-select").querySelector(`option[value="${v.id}"]`);
+    if (opt) opt.textContent = v.title;
 
-  $("new-vacancy-form").classList.add("hidden");
-  $("vacancy-title").value = "";
-  $("vacancy-desc").value  = "";
-  onVacancyChange(v.id);
+    editingVacancyId = null;
+    $("new-vacancy-form").classList.add("hidden");
+    $("vacancy-title").value = "";
+    $("vacancy-desc").value  = "";
+  } else {
+    // Создание новой
+    const res = await fetch(`${API}/api/vacancies`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, description: desc }),
+    });
+    const v = await res.json();
+
+    const opt = document.createElement("option");
+    opt.value = v.id;
+    opt.textContent = v.title;
+    $("vacancy-select").appendChild(opt);
+    $("vacancy-select").value = v.id;
+
+    $("new-vacancy-form").classList.add("hidden");
+    $("vacancy-title").value = "";
+    $("vacancy-desc").value  = "";
+    onVacancyChange(v.id);
+  }
 }
 
 async function deleteVacancy() {
@@ -152,6 +196,45 @@ async function deleteVacancy() {
   $("vacancy-select").value = "";
 }
 
+// ── Parse vacancy from HH URL ─────────────────────────────────────────────────
+
+async function parseVacancyUrl() {
+  const url = $("vacancy-url").value.trim();
+  if (!url || !url.includes("hh.")) { alert("Вставьте ссылку на вакансию hh.kz / hh.ru"); return; }
+
+  $("btn-parse-url").textContent = "Загружаю...";
+  $("btn-parse-url").disabled = true;
+
+  try {
+    const res = await chrome.runtime.sendMessage({ action: "fetch_page", url });
+    if (!res.ok) throw new Error(res.error || "Ошибка загрузки");
+
+    const doc = new DOMParser().parseFromString(res.html, "text/html");
+
+    const title =
+      doc.querySelector("[data-qa='vacancy-title']")?.textContent?.trim() ||
+      doc.querySelector("h1")?.textContent?.trim() ||
+      "";
+
+    const descEl =
+      doc.querySelector("[data-qa='vacancy-description']") ||
+      doc.querySelector(".vacancy-description")             ||
+      doc.querySelector("[class*='vacancy-description']");
+
+    const desc = descEl?.innerText?.trim() || descEl?.textContent?.replace(/\s+/g, " ").trim() || "";
+
+    if (!title) { alert("Не удалось считать название — попробуйте вставить текст вручную"); return; }
+
+    $("vacancy-title").value = title;
+    $("vacancy-desc").value  = desc;
+  } catch (e) {
+    alert("Ошибка: " + e.message);
+  } finally {
+    $("btn-parse-url").textContent = "Загрузить";
+    $("btn-parse-url").disabled = false;
+  }
+}
+
 // ── Screening ─────────────────────────────────────────────────────────────────
 
 function showProgress(visible) {
@@ -162,7 +245,6 @@ async function startScreening() {
   if (!selectedVacancyId) { alert("Выберите вакансию"); return; }
   if (!activeTabId) { alert("Откройте страницу откликов на hh.kz"); return; }
 
-  // Сначала проверяем что контент-скрипт живой
   let ack;
   try {
     ack = await chrome.tabs.sendMessage(activeTabId, {
@@ -179,7 +261,6 @@ async function startScreening() {
     return;
   }
 
-  // Скрининг запущен — переключаем UI и слушаем прогресс через storage
   $("btn-start").classList.add("hidden");
   $("btn-stop").classList.remove("hidden");
   showProgress(true);
@@ -317,10 +398,15 @@ async function runDiagnose() {
 
 function bindEvents() {
   $("vacancy-select").addEventListener("change", e => onVacancyChange(e.target.value));
-  $("btn-new-vacancy").addEventListener("click",    () => $("new-vacancy-form").classList.toggle("hidden"));
+  $("btn-new-vacancy").addEventListener("click",    openNewVacancyForm);
+  $("btn-edit-vacancy").addEventListener("click",   openEditVacancyForm);
   $("btn-save-vacancy").addEventListener("click",   saveVacancy);
-  $("btn-cancel-vacancy").addEventListener("click", () => $("new-vacancy-form").classList.add("hidden"));
+  $("btn-cancel-vacancy").addEventListener("click", () => {
+    editingVacancyId = null;
+    $("new-vacancy-form").classList.add("hidden");
+  });
   $("btn-delete-vacancy").addEventListener("click", deleteVacancy);
+  $("btn-parse-url").addEventListener("click",      parseVacancyUrl);
   $("btn-start").addEventListener("click",          startScreening);
   $("btn-stop").addEventListener("click",           stopScreening);
   $("btn-dashboard").addEventListener("click",      () => {
@@ -336,6 +422,7 @@ async function onVacancyChange(id) {
   chrome.storage.session.set({ selectedVacancyId: id || null });
   $("screening-section").classList.toggle("hidden", !id);
   $("btn-delete-vacancy").style.display = id ? "" : "none";
+  $("btn-edit-vacancy").style.display   = id ? "" : "none";
   if (id) await loadPendingActions();
   else $("actions-section").classList.add("hidden");
 }

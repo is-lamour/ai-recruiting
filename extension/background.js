@@ -72,6 +72,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.action === "fetch_page") {
+    fetch(message.url, { credentials: "omit" })
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.text();
+      })
+      .then(html => sendResponse({ ok: true, html }))
+      .catch(err => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+
   if (message.action === "open_tabs") {
     message.urls.forEach(url => chrome.tabs.create({ url, active: false }));
     sendResponse({ status: "ok", count: message.urls.length });

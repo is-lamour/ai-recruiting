@@ -17,13 +17,18 @@
     <label class="label">Вакансия</label>
     <div class="row">
       <select id="vacancy-select" style="flex:1"></select>
+      <button class="btn btn-ghost" id="btn-edit-vacancy"   title="Редактировать" style="flex:0;padding:7px 10px;display:none">✏️</button>
       <button class="btn btn-ghost" id="btn-delete-vacancy" title="Удалить вакансию" style="flex:0;padding:7px 10px;display:none">🗑</button>
     </div>
     <button class="link-btn" id="btn-new-vacancy">+ Добавить вакансию</button>
   </div>
 
-  <!-- Форма новой вакансии -->
+  <!-- Форма новой/редактируемой вакансии -->
   <div id="new-vacancy-form" class="hidden section">
+    <div class="row" style="margin-bottom:6px">
+      <input type="text" id="vacancy-url" placeholder="Ссылка на вакансию hh.kz (необязательно)" style="flex:1;font-size:11px" />
+      <button class="btn btn-ghost" id="btn-parse-url" style="flex:0;white-space:nowrap;font-size:11px">Загрузить</button>
+    </div>
     <input type="text" id="vacancy-title" placeholder="Название (напр. Оператор КЦ)" />
     <textarea id="vacancy-desc" rows="6" placeholder="Вставьте текст вакансии с требованиями и обязанностями..."></textarea>
     <div class="row">

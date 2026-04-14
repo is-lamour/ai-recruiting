@@ -60,7 +60,7 @@ function resetCancel() {
 
 // ── Сообщения от popup ────────────────────────────────────────────────────────
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   switch (message.action) {
 
     case "start_screening":
@@ -187,9 +187,27 @@ async function collectAllResumeLinks() {
   return links;
 }
 
+function findSuggestedDivider() {
+  // Ищем заголовок "Подходящие резюме, подобранные по параметрам вакансии"
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  while (walker.nextNode()) {
+    if (/подходящие резюме.*параметрам/i.test(walker.currentNode.textContent)) {
+      return walker.currentNode.parentElement;
+    }
+  }
+  return null;
+}
+
+function isBeforeDivider(el, divider) {
+  if (!divider) return true;
+  // DOCUMENT_POSITION_PRECEDING (2) — el стоит раньше divider в DOM
+  return !!(divider.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_PRECEDING);
+}
+
 function getLinksFromDOM() {
   const links = [];
   const seen  = new Set();
+  const divider = findSuggestedDivider();
 
   const selectors = [
     "[data-qa='resume-serp__title-link']",
@@ -202,6 +220,7 @@ function getLinksFromDOM() {
     document.querySelectorAll(sel).forEach(el => {
       const href = el.getAttribute("href") || "";
       if (!href.includes("/resume/")) return;
+      if (!isBeforeDivider(el, divider)) return; // пропускаем "подходящие"
 
       const fullUrl  = href.startsWith("http") ? href : window.location.origin + href;
       const cleanUrl = fullUrl.split("?")[0].split("#")[0];
