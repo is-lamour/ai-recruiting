@@ -222,6 +222,18 @@ main { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
   color: #0369a1;
 }
 
+.resume-summary {
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg);
+  border-left: 3px solid var(--border);
+  padding: 4px 8px;
+  border-radius: 4px;
+  margin-bottom: 6px;
+  font-family: monospace;
+  line-height: 1.4;
+}
+
 .ai-comment {
   font-size: 13px;
   color: var(--text-muted);

@@ -18,32 +18,47 @@ model = genai.GenerativeModel(
     "gemini-2.5-flash",
     generation_config=genai.GenerationConfig(
         temperature=0,
-        max_output_tokens=4096,
+        max_output_tokens=8192,
     ),
 )
 
-# Короткий промпт = быстрее + дешевле
-PROMPT = """Ты HR. Оцени резюме. Ответь СТРОГО одной строкой JSON без переносов, без markdown:
-{{"score":75,"category":"consider","comment":"Краткий вывод до 80 символов.","questions":["Вопрос 1?","Вопрос 2?","Вопрос 3?"]}}
-Правила: suitable>=80, consider 66-79, reject<66. Каждый вопрос до 60 символов.
+# ── Промпты ───────────────────────────────────────────────────────────────────
 
-ВАКАНСИЯ:{vacancy_text}
+VACANCY_SUMMARY_PROMPT = """Сожми требования вакансии в одну строку до 400 символов.
+Включи: ключевые навыки, стек технологий, опыт (лет), ключевые обязанности. Только суть.
+
+ВАКАНСИЯ: {description}"""
+
+SCREEN_PROMPT = """Ты HR. Оцени резюме по требованиям вакансии. Ответь СТРОГО одной строкой JSON без markdown:
+{{"score":75,"category":"consider","comment":"До 80 символов.","questions":["?","?","?"],"summary":"Стек и опыт кандидата до 100 символов"}}
+Правила: suitable>=80, consider 66-79, reject<66. summary — ключевые навыки/стек/опыт кандидата.
+
+ТРЕБОВАНИЯ ВАКАНСИИ:{requirements}
 РЕЗЮМЕ:{resume_text}"""
 
 
-def screen_resume(vacancy_text: str, resume_text: str) -> dict:
-    prompt = PROMPT.format(
-        vacancy_text=vacancy_text[:3000],   # ограничиваем размер
-        resume_text=resume_text[:5000],
+def summarize_vacancy(description: str) -> str:
+    """Сжимает описание вакансии в короткую строку требований."""
+    prompt = VACANCY_SUMMARY_PROMPT.format(description=description[:4000])
+    response = model.generate_content(prompt)
+    return response.text.strip()[:500]
+
+
+def screen_resume(requirements: str, resume_text: str) -> dict:
+    """Скринирует резюме по сжатым требованиям вакансии."""
+    prompt = SCREEN_PROMPT.format(
+        requirements=requirements[:500],
+        resume_text=resume_text[:3000],
     )
     response = model.generate_content(prompt)
+    finish = response.candidates[0].finish_reason if response.candidates else "?"
     text = response.text.strip()
+    print(f"[AI finish={finish}] FULL: {repr(text)}")
 
     if "```" in text:
         lines = text.splitlines()
         text = "\n".join(l for l in lines if not l.strip().startswith("```"))
 
-    # Вырезаем JSON из возможного мусора вокруг
     start = text.find("{")
     end   = text.rfind("}") + 1
     if start != -1 and end > start:
@@ -58,6 +73,7 @@ def screen_resume(vacancy_text: str, resume_text: str) -> dict:
             "category": "consider",
             "comment": "Не удалось разобрать ответ AI. Проверьте резюме вручную.",
             "questions": [],
+            "summary": "",
         }
 
     result["score"] = max(0, min(100, int(result.get("score", 0))))
@@ -67,5 +83,7 @@ def screen_resume(vacancy_text: str, resume_text: str) -> dict:
         result["category"] = "suitable" if s >= 80 else ("consider" if s >= 66 else "reject")
     if not isinstance(result.get("questions"), list):
         result["questions"] = []
+    if not isinstance(result.get("summary"), str):
+        result["summary"] = ""
 
     return result

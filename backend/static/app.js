@@ -122,6 +122,7 @@ function buildCard(c) {
         <span class="category-badge ${cat}">${catLabel(cat)}</span>
         ${statusLabel ? `<span class="status-badge">${escHtml(statusLabel)}</span>` : ""}
       </div>
+      ${c.summary ? `<p class="resume-summary">${escHtml(c.summary)}</p>` : ""}
       <p class="ai-comment">${escHtml(c.ai_comment || "")}</p>
       ${questions.length ? `
         <button class="questions-toggle" data-id="${c.id}">▸ Вопросы по пробелам</button>

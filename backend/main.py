@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 
 from database import init_db, get_db, row_to_dict
-from ai import screen_resume
+from ai import screen_resume, summarize_vacancy
 
 app = FastAPI(title="HH Auto Screening")
 
@@ -76,11 +76,12 @@ def list_vacancies():
 
 @app.post("/api/vacancies")
 def create_vacancy(data: VacancyCreate):
+    requirements = summarize_vacancy(data.description)
     conn = get_db()
     try:
         cur = conn.execute(
-            "INSERT INTO vacancies (title, description) VALUES (?, ?)",
-            (data.title, data.description),
+            "INSERT INTO vacancies (title, description, requirements) VALUES (?, ?, ?)",
+            (data.title, data.description, requirements),
         )
         conn.commit()
         row = conn.execute(
@@ -106,11 +107,12 @@ def screened_urls(vacancy_id: int):
 
 @app.put("/api/vacancies/{vacancy_id}")
 def update_vacancy(vacancy_id: int, data: VacancyCreate):
+    requirements = summarize_vacancy(data.description)
     conn = get_db()
     try:
         conn.execute(
-            "UPDATE vacancies SET title = ?, description = ? WHERE id = ?",
-            (data.title, data.description, vacancy_id),
+            "UPDATE vacancies SET title = ?, description = ?, requirements = ? WHERE id = ?",
+            (data.title, data.description, requirements, vacancy_id),
         )
         conn.commit()
         row = conn.execute("SELECT * FROM vacancies WHERE id = ?", (vacancy_id,)).fetchone()
@@ -156,14 +158,15 @@ def screen_candidate(data: CandidateScreen):
         if not vacancy:
             raise HTTPException(status_code=404, detail="Вакансия не найдена")
 
-        # AI-скрининг
-        result = screen_resume(vacancy["description"], data.resume_text)
+        # AI-скрининг (используем сжатые требования, не полное описание)
+        requirements = vacancy["requirements"] or vacancy["description"][:500]
+        result = screen_resume(requirements, data.resume_text)
 
         # Сохранить в БД
         cur = conn.execute(
             """INSERT INTO candidates
-               (vacancy_id, name, hh_url, resume_text, score, category, ai_comment, questions)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               (vacancy_id, name, hh_url, resume_text, score, category, ai_comment, questions, summary)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 data.vacancy_id,
                 data.name,
@@ -173,6 +176,7 @@ def screen_candidate(data: CandidateScreen):
                 result["category"],
                 result["comment"],
                 json.dumps(result["questions"], ensure_ascii=False),
+                result.get("summary", ""),
             ),
         )
         conn.commit()

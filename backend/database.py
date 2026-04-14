@@ -15,10 +15,11 @@ def init_db():
     conn = get_db()
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS vacancies (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            title       TEXT NOT NULL,
-            description TEXT NOT NULL,
-            created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            title        TEXT NOT NULL,
+            description  TEXT NOT NULL,
+            requirements TEXT DEFAULT '',
+            created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
         CREATE TABLE IF NOT EXISTS candidates (
@@ -31,12 +32,22 @@ def init_db():
             category    TEXT DEFAULT 'pending',
             ai_comment  TEXT,
             questions   TEXT,
+            summary     TEXT DEFAULT '',
             status      TEXT DEFAULT 'new',
             created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (vacancy_id) REFERENCES vacancies(id)
         );
     """)
-    conn.commit()
+    # Миграция для существующих БД
+    for sql in [
+        "ALTER TABLE vacancies  ADD COLUMN requirements TEXT DEFAULT ''",
+        "ALTER TABLE candidates ADD COLUMN summary      TEXT DEFAULT ''",
+    ]:
+        try:
+            conn.execute(sql)
+            conn.commit()
+        except Exception:
+            pass
     conn.close()
 
 
