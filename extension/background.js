@@ -1,6 +1,6 @@
 const API = "http://localhost:8000";
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   // Хранилище (content scripts не могут обращаться к storage.session напрямую)
   if (message.action === "save_progress") {
@@ -12,6 +12,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === "is_cancelled") {
     chrome.storage.session.get("cancelScreening", d => {
       sendResponse({ cancelled: !!d.cancelScreening });
+    });
+    return true;
+  }
+
+  if (message.action === "get_selected_vacancy") {
+    chrome.storage.session.get("selectedVacancyId", d => {
+      sendResponse({ vacancyId: d.selectedVacancyId || null });
     });
     return true;
   }

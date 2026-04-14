@@ -321,56 +321,50 @@ async function rejectCandidateOnPage(resumeUrl) {
   const resumeId = resumeUrl.split("/resume/")[1]?.split("?")[0]?.split("/")[0];
   if (!resumeId) return false;
 
-  // Ищем карточку кандидата с этим резюме
-  const links = document.querySelectorAll(`a[href*="${resumeId}"]`);
-  for (const link of links) {
-    const card =
-      link.closest("[data-qa='vacancy-response-item']") ||
-      link.closest("[data-qa='resume-serp-item']")       ||
-      link.closest("[class*='applicant']")               ||
-      link.closest("[class*='response']")                ||
-      link.closest("article")                            ||
-      link.closest("li");
+  // Ищем ссылку с нужным resumeId
+  const link = document.querySelector(`a[href*="${resumeId}"]`);
+  if (!link) { console.log(`[HH Reject] ❌ Ссылка не найдена: ${resumeId}`); return false; }
 
-    if (!card) continue;
-
-    // Кнопка "Отказать" — может быть dropdown trigger
-    const rejectTrigger =
-      card.querySelector("[data-qa*='discard']")   ||
-      card.querySelector("[data-qa*='reject']")    ||
-      card.querySelector("[data-qa*='decline']")   ||
-      Array.from(card.querySelectorAll("button, [role='button']")).find(
-        el => /^отказать/i.test(el.textContent.trim())
-      );
-
-    if (!rejectTrigger) continue;
-
-    rejectTrigger.click();
-    await sleep(600);
-
-    // Ищем "Не подходит" в открывшемся dropdown
-    const dropdownItems = document.querySelectorAll(
-      "[role='menu'] [role='menuitem'], [role='menu'] button, " +
-      "[role='listbox'] [role='option'], " +
-      "[class*='dropdown'] button, [class*='popup'] button, " +
-      "[class*='menu-item'], [class*='bloko-menu'] button"
-    );
-
-    const notSuitable = Array.from(dropdownItems).find(
-      el => /не подходит/i.test(el.textContent)
-    );
-
-    if (notSuitable) {
-      notSuitable.click();
-      await sleep(600);
-      return true;
+  // Поднимаемся вверх по DOM — ищем ближайшего предка с кнопкой "Отказать",
+  // но останавливаемся до outer-контейнера (у него есть responses-auto-sort)
+  let discardBtn = null;
+  let el = link.parentElement;
+  while (el && el !== document.body) {
+    const btn = el.querySelector('[data-qa="employee-discard-on-topic"]');
+    if (btn && !el.querySelector('[data-qa="responses-auto-sort"]')) {
+      discardBtn = btn;
+      break;
     }
-
-    // Если dropdown не нашли — закрываем нажатием Escape
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-    return false;
+    el = el.parentElement;
   }
 
+  console.log(`[HH Reject] discardBtn найден: ${!!discardBtn}`);
+  if (!discardBtn) return false;
+
+  discardBtn.click();
+
+  // Поллим появление дропдауна (до 2 сек)
+  let notSuitable = null;
+  for (let i = 0; i < 8 && !notSuitable; i++) {
+    await sleep(250);
+    notSuitable =
+      // 1. По data-qa (самый надёжный — HH magritte UI)
+      document.querySelector('[data-qa*="discard_by_employer_one-click"]') ||
+      document.querySelector('[data-qa*="discard_by_employer"]') ||
+      // 2. Текст с &nbsp; (\u00A0) — "Не подходит"
+      Array.from(document.querySelectorAll("[role='button'], button, li, [role='menuitem'], [role='option']"))
+        .find(e => /не[\s\u00A0]+подходит/i.test(e.textContent));
+  }
+
+  console.log(`[HH Reject] Найдено: ${notSuitable?.dataset?.qa} / "${notSuitable?.textContent?.trim().slice(0, 30)}"`);
+
+  if (notSuitable) {
+    notSuitable.click();
+    await sleep(600);
+    return true;
+  }
+
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   return false;
 }
 
@@ -379,3 +373,36 @@ async function rejectCandidateOnPage(resumeUrl) {
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
+
+// ── Авто-отказы (опрос API каждые 30 сек) ────────────────────────────────────
+
+function getSelectedVacancy() {
+  return new Promise(r =>
+    chrome.runtime.sendMessage({ action: "get_selected_vacancy" }, res => {
+      if (chrome.runtime.lastError) r(null);
+      else r(res?.vacancyId || null);
+    })
+  );
+}
+
+let autoRejectRunning = false;
+
+async function runAutoReject() {
+  if (screeningActive || autoRejectRunning) return;
+  const vacancyId = await getSelectedVacancy();
+  if (!vacancyId) return;
+
+  try {
+    const pending = await bgGet(`/api/vacancies/${vacancyId}/pending-actions`);
+    if (!pending.to_reject?.length) return;
+
+    autoRejectRunning = true;
+    console.log(`[HH Screen] Авто-отказ: ${pending.to_reject.length} кандидатов`);
+    await executeRejections(pending.to_reject, () => {});
+  } catch { /* backend недоступен */ }
+  finally {
+    autoRejectRunning = false;
+  }
+}
+
+setInterval(runAutoReject, 30000);
