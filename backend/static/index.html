@@ -17,8 +17,43 @@
       <select id="vacancy-select">
         <option value="">— Выберите вакансию —</option>
       </select>
+      <button class="btn btn-primary" id="btn-new-vacancy">+ Вакансия</button>
     </div>
   </header>
+
+  <!-- Панель вакансии -->
+  <div id="vacancy-panel" class="vacancy-panel hidden">
+    <div class="vacancy-info">
+      <div class="vacancy-info-text">
+        <div class="vacancy-info-title" id="vp-title"></div>
+        <div class="vacancy-info-req" id="vp-requirements"></div>
+      </div>
+      <div class="vacancy-info-actions">
+        <button class="btn btn-ghost btn-sm" id="btn-toggle-desc">▾ Описание</button>
+        <button class="btn btn-ghost btn-sm" id="btn-edit-vacancy">✏️ Изменить</button>
+        <button class="btn btn-danger-sm" id="btn-delete-vacancy">🗑</button>
+      </div>
+    </div>
+    <div id="vp-desc-wrap" class="vacancy-desc-wrap hidden">
+      <pre id="vp-description"></pre>
+    </div>
+  </div>
+
+  <!-- Форма создания/редактирования вакансии -->
+  <div id="vacancy-form-wrap" class="vacancy-form-wrap hidden">
+    <div class="vacancy-form">
+      <h3 id="vf-heading">Новая вакансия</h3>
+      <input  type="text" id="vf-title"  placeholder="Название (напр. Системный аналитик)" />
+      <textarea id="vf-desc" rows="6" placeholder="Вставьте текст вакансии с требованиями..."></textarea>
+      <label class="vf-label">Summary (ключевые требования для скрининга)</label>
+      <textarea id="vf-requirements" rows="3" placeholder="Оставьте пустым — AI сформирует автоматически из описания (~5 сек)"></textarea>
+      <div class="vf-note">Если заполните summary вручную — AI-генерация пропускается</div>
+      <div class="row gap">
+        <button class="btn btn-primary" id="btn-save-vacancy">Сохранить</button>
+        <button class="btn btn-ghost"   id="btn-cancel-vacancy">Отмена</button>
+      </div>
+    </div>
+  </div>
 
   <main>
     <!-- Заглушка при отсутствии выбранной вакансии -->

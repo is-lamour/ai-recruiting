@@ -55,6 +55,137 @@ h1 { font-size: 18px; font-weight: 700; color: var(--text); }
   color: var(--text);
 }
 
+/* ── Vacancy panel ───────────────────────────────────────────────────────── */
+.vacancy-panel {
+  background: #fff;
+  border-bottom: 1px solid var(--border);
+  padding: 12px 24px;
+}
+
+.vacancy-info {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.vacancy-info-text { flex: 1; min-width: 0; }
+
+.vacancy-info-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vacancy-info-req {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.vacancy-info-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.btn-sm {
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+.btn-danger-sm {
+  padding: 5px 9px;
+  font-size: 13px;
+  border: none;
+  border-radius: 8px;
+  background: var(--reject-bg);
+  color: var(--reject);
+  cursor: pointer;
+  transition: opacity .15s;
+}
+.btn-danger-sm:hover { opacity: .8; }
+
+.vacancy-desc-wrap {
+  margin-top: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.vacancy-desc-wrap pre {
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  line-height: 1.5;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+/* ── Vacancy form ─────────────────────────────────────────────────────────── */
+.vacancy-form-wrap {
+  background: rgba(0,0,0,.35);
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.vacancy-form {
+  background: #fff;
+  border-radius: var(--radius);
+  padding: 28px;
+  width: 560px;
+  max-width: 95vw;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,.18);
+}
+
+.vacancy-form h3 { font-size: 16px; font-weight: 700; }
+
+.vacancy-form input[type="text"],
+.vacancy-form textarea {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--text);
+  resize: vertical;
+  outline: none;
+  transition: border-color .15s;
+}
+.vacancy-form input[type="text"]:focus,
+.vacancy-form textarea:focus { border-color: #3b82f6; }
+
+.vf-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.vf-note {
+  font-size: 12px;
+  color: var(--text-muted);
+  background: #f8fafc;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border-left: 3px solid #94a3b8;
+}
+
+.row { display: flex; align-items: center; }
+.gap { gap: 10px; }
+
 /* ── Main ────────────────────────────────────────────────────────────────── */
 main { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
 

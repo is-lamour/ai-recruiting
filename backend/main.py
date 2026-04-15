@@ -47,6 +47,7 @@ def health():
 class VacancyCreate(BaseModel):
     title: str
     description: str
+    requirements: Optional[str] = None  # если передано — используется вместо AI-генерации
 
 
 class CandidateScreen(BaseModel):
@@ -76,7 +77,7 @@ def list_vacancies():
 
 @app.post("/api/vacancies")
 def create_vacancy(data: VacancyCreate):
-    requirements = summarize_vacancy(data.description)
+    requirements = data.requirements.strip() if data.requirements and data.requirements.strip() else summarize_vacancy(data.description)
     conn = get_db()
     try:
         cur = conn.execute(
@@ -107,7 +108,7 @@ def screened_urls(vacancy_id: int):
 
 @app.put("/api/vacancies/{vacancy_id}")
 def update_vacancy(vacancy_id: int, data: VacancyCreate):
-    requirements = summarize_vacancy(data.description)
+    requirements = data.requirements.strip() if data.requirements and data.requirements.strip() else summarize_vacancy(data.description)
     conn = get_db()
     try:
         conn.execute(
