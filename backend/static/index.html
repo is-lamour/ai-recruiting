@@ -43,11 +43,15 @@
   <div id="vacancy-form-wrap" class="vacancy-form-wrap hidden">
     <div class="vacancy-form">
       <h3 id="vf-heading">Новая вакансия</h3>
+      <div id="vf-url-row" class="vf-url-row">
+        <input type="text" id="vf-url" placeholder="Ссылка на вакансию hh.kz (необязательно)" />
+        <button class="btn btn-ghost btn-sm" id="btn-load-url">Загрузить</button>
+      </div>
       <input  type="text" id="vf-title"  placeholder="Название (напр. Системный аналитик)" />
       <textarea id="vf-desc" rows="6" placeholder="Вставьте текст вакансии с требованиями..."></textarea>
       <label class="vf-label">Summary (ключевые требования для скрининга)</label>
-      <textarea id="vf-requirements" rows="3" placeholder="Оставьте пустым — AI сформирует автоматически из описания (~5 сек)"></textarea>
-      <div class="vf-note">Если заполните summary вручную — AI-генерация пропускается</div>
+      <textarea id="vf-requirements" rows="3" placeholder="Оставьте пустым — AI сформирует автоматически (~5 сек в фоне)"></textarea>
+      <div class="vf-note">Если заполните summary вручную — AI-генерация пропускается. Иначе summary появится через несколько секунд после сохранения.</div>
       <div class="row gap">
         <button class="btn btn-primary" id="btn-save-vacancy">Сохранить</button>
         <button class="btn btn-ghost"   id="btn-cancel-vacancy">Отмена</button>
@@ -122,6 +126,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=3"></script>
 </body>
 </html>

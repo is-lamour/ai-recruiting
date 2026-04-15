@@ -168,6 +168,32 @@ h1 { font-size: 18px; font-weight: 700; color: var(--text); }
 .vacancy-form input[type="text"]:focus,
 .vacancy-form textarea:focus { border-color: #3b82f6; }
 
+.vf-url-row {
+  display: flex;
+  gap: 8px;
+}
+.vf-url-row input {
+  flex: 1;
+}
+
+.vp-req-pending {
+  color: var(--consider) !important;
+  font-style: italic;
+}
+
+.action-btn.delete-candidate {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 13px;
+  margin-top: 4px;
+}
+.action-btn.delete-candidate:hover {
+  border-color: var(--reject);
+  color: var(--reject);
+  background: var(--reject-bg);
+}
+
 .vf-label {
   font-size: 12px;
   color: var(--text-muted);

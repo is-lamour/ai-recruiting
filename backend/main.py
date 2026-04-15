@@ -1,11 +1,13 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Optional
 import json
+import requests as http_requests
 from pathlib import Path
+from bs4 import BeautifulSoup
 
 from database import init_db, get_db, row_to_dict
 from ai import screen_resume, summarize_vacancy
@@ -61,6 +63,25 @@ class StatusUpdate(BaseModel):
     status: str  # new | to_reject | to_huntflow | rejected | huntflow_sent
 
 
+# ── Background tasks ──────────────────────────────────────────────────────────
+
+def _generate_summary_bg(vacancy_id: int, description: str):
+    """Генерирует summary вакансии в фоне и сохраняет в БД."""
+    try:
+        requirements = summarize_vacancy(description)
+        conn = get_db()
+        try:
+            conn.execute(
+                "UPDATE vacancies SET requirements = ? WHERE id = ?",
+                (requirements, vacancy_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as e:
+        print(f"[summary bg error] vacancy_id={vacancy_id}: {e}")
+
+
 # ── Vacancies ─────────────────────────────────────────────────────────────────
 
 @app.get("/api/vacancies")
@@ -76,46 +97,36 @@ def list_vacancies():
 
 
 @app.post("/api/vacancies")
-def create_vacancy(data: VacancyCreate):
-    requirements = data.requirements.strip() if data.requirements and data.requirements.strip() else summarize_vacancy(data.description)
+def create_vacancy(data: VacancyCreate, background_tasks: BackgroundTasks):
+    manual_req = data.requirements.strip() if data.requirements and data.requirements.strip() else None
     conn = get_db()
     try:
         cur = conn.execute(
             "INSERT INTO vacancies (title, description, requirements) VALUES (?, ?, ?)",
-            (data.title, data.description, requirements),
+            (data.title, data.description, manual_req or ""),
         )
         conn.commit()
-        row = conn.execute(
-            "SELECT * FROM vacancies WHERE id = ?", (cur.lastrowid,)
-        ).fetchone()
+        vacancy_id = cur.lastrowid
+        if not manual_req:
+            background_tasks.add_task(_generate_summary_bg, vacancy_id, data.description)
+        row = conn.execute("SELECT * FROM vacancies WHERE id = ?", (vacancy_id,)).fetchone()
         return row_to_dict(row)
     finally:
         conn.close()
 
 
-@app.get("/api/vacancies/{vacancy_id}/screened-urls")
-def screened_urls(vacancy_id: int):
-    """Возвращает список уже скринированных URL резюме для вакансии."""
-    conn = get_db()
-    try:
-        rows = conn.execute(
-            "SELECT hh_url FROM candidates WHERE vacancy_id = ?", (vacancy_id,)
-        ).fetchall()
-        return [row["hh_url"] for row in rows]
-    finally:
-        conn.close()
-
-
 @app.put("/api/vacancies/{vacancy_id}")
-def update_vacancy(vacancy_id: int, data: VacancyCreate):
-    requirements = data.requirements.strip() if data.requirements and data.requirements.strip() else summarize_vacancy(data.description)
+def update_vacancy(vacancy_id: int, data: VacancyCreate, background_tasks: BackgroundTasks):
+    manual_req = data.requirements.strip() if data.requirements and data.requirements.strip() else None
     conn = get_db()
     try:
         conn.execute(
             "UPDATE vacancies SET title = ?, description = ?, requirements = ? WHERE id = ?",
-            (data.title, data.description, requirements, vacancy_id),
+            (data.title, data.description, manual_req or "", vacancy_id),
         )
         conn.commit()
+        if not manual_req:
+            background_tasks.add_task(_generate_summary_bg, vacancy_id, data.description)
         row = conn.execute("SELECT * FROM vacancies WHERE id = ?", (vacancy_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Не найдено")
@@ -136,13 +147,73 @@ def delete_vacancy(vacancy_id: int):
         conn.close()
 
 
+@app.get("/api/vacancies/{vacancy_id}/screened-urls")
+def screened_urls(vacancy_id: int):
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            "SELECT hh_url FROM candidates WHERE vacancy_id = ?", (vacancy_id,)
+        ).fetchall()
+        return [row["hh_url"] for row in rows]
+    finally:
+        conn.close()
+
+
+# ── Parse HH vacancy URL ──────────────────────────────────────────────────────
+
+@app.get("/api/parse-hh-vacancy")
+def parse_hh_vacancy(url: str):
+    """Загружает страницу вакансии HH и возвращает title + description."""
+    url = url.strip().strip("<>")
+    try:
+        resp = http_requests.get(url, timeout=15, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120",
+            "Accept-Language": "ru-RU,ru;q=0.9",
+        })
+        resp.raise_for_status()
+        resp.encoding = "utf-8"
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Не удалось загрузить страницу: {e}")
+
+    soup = BeautifulSoup(resp.text, "html.parser")
+
+    # Заголовок
+    title_el = (
+        soup.find(attrs={"data-qa": "vacancy-title"}) or
+        soup.find("h1")
+    )
+    title = title_el.get_text(" ", strip=True) if title_el else ""
+    # Убираем подзаголовки вроде "(архив 7 мая 2025)"
+    if title_el:
+        for sub in title_el.find_all(["div", "span"]):
+            sub.decompose()
+        title = title_el.get_text(strip=True)
+
+    # Описание — несколько вариантов селекторов
+    desc_el = (
+        soup.find(attrs={"data-qa": "vacancy-description"}) or
+        soup.find("div", class_=lambda c: c and "vacancy-description" in " ".join(c)) or
+        soup.find(attrs={"data-qa": "vacancy-branded-description"}) or
+        soup.find("div", class_=lambda c: c and "brandingDescription" in " ".join(c if c else []))
+    )
+    description = desc_el.get_text(separator="\n", strip=True) if desc_el else ""
+
+    print(f"[parse-hh] title={repr(title[:60])} desc_len={len(description)}")
+
+    if not title:
+        raise HTTPException(status_code=422, detail="Не удалось найти заголовок вакансии")
+    if not description:
+        raise HTTPException(status_code=422, detail="Не удалось найти описание вакансии. Попробуйте вставить текст вручную.")
+
+    return {"title": title, "description": description}
+
+
 # ── Screening ─────────────────────────────────────────────────────────────────
 
 @app.post("/api/screen")
 def screen_candidate(data: CandidateScreen):
     conn = get_db()
     try:
-        # Если уже скринили — вернуть существующий результат
         existing = conn.execute(
             "SELECT * FROM candidates WHERE hh_url = ? AND vacancy_id = ?",
             (data.hh_url, data.vacancy_id),
@@ -152,18 +223,15 @@ def screen_candidate(data: CandidateScreen):
             d["questions"] = json.loads(d["questions"] or "[]")
             return d
 
-        # Получить текст вакансии
         vacancy = conn.execute(
             "SELECT * FROM vacancies WHERE id = ?", (data.vacancy_id,)
         ).fetchone()
         if not vacancy:
             raise HTTPException(status_code=404, detail="Вакансия не найдена")
 
-        # AI-скрининг (используем сжатые требования, не полное описание)
         requirements = vacancy["requirements"] or vacancy["description"][:500]
         result = screen_resume(requirements, data.resume_text)
 
-        # Сохранить в БД
         cur = conn.execute(
             """INSERT INTO candidates
                (vacancy_id, name, hh_url, resume_text, score, category, ai_comment, questions, summary)
@@ -236,6 +304,17 @@ def update_status(candidate_id: int, data: StatusUpdate):
         conn.close()
 
 
+@app.delete("/api/candidates/{candidate_id}")
+def delete_candidate(candidate_id: int):
+    conn = get_db()
+    try:
+        conn.execute("DELETE FROM candidates WHERE id = ?", (candidate_id,))
+        conn.commit()
+        return {"status": "deleted"}
+    finally:
+        conn.close()
+
+
 # ── Stats ─────────────────────────────────────────────────────────────────────
 
 @app.get("/api/vacancies/{vacancy_id}/stats")
@@ -280,7 +359,6 @@ def pending_actions(vacancy_id: int):
 
 @app.post("/api/vacancies/{vacancy_id}/mark-for-reject")
 def mark_for_reject(vacancy_id: int):
-    """Помечает всех кандидатов категории 'reject' как ожидающих отказа на HH."""
     conn = get_db()
     try:
         conn.execute(
@@ -299,7 +377,6 @@ def mark_for_reject(vacancy_id: int):
 
 @app.post("/api/vacancies/{vacancy_id}/mark-for-huntflow")
 def mark_for_huntflow(vacancy_id: int):
-    """Помечает всех кандидатов категории 'suitable' как ожидающих добавления в Huntflow."""
     conn = get_db()
     try:
         conn.execute(

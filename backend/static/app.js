@@ -5,6 +5,7 @@ let allVacancies = [];
 let allCandidates = [];
 let activeFilter = "all";
 let editingVacancyId = null;
+let summaryPollTimer = null;
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
@@ -42,7 +43,6 @@ async function selectVacancy(id) {
   currentVacancyId = id;
   currentVacancy = allVacancies.find(v => v.id === id) || null;
 
-  // Если вакансия не загружена — подгружаем
   if (!currentVacancy) {
     try {
       const res = await fetch(`${API}/api/vacancies`);
@@ -62,9 +62,40 @@ function showVacancyPanel(v) {
   if (!v) { panel.classList.add("hidden"); return; }
 
   document.getElementById("vp-title").textContent = v.title;
-  document.getElementById("vp-requirements").textContent = v.requirements || "Требования не сформированы (пересохраните вакансию)";
+  const reqEl = document.getElementById("vp-requirements");
+  if (v.requirements) {
+    reqEl.textContent = v.requirements;
+    reqEl.classList.remove("vp-req-pending");
+  } else {
+    reqEl.textContent = "⏳ Генерируется summary...";
+    reqEl.classList.add("vp-req-pending");
+  }
   document.getElementById("vp-description").textContent = v.description || "";
   panel.classList.remove("hidden");
+}
+
+// ── Summary polling ───────────────────────────────────────────────────────────
+
+function startSummaryPoll(vacancyId) {
+  stopSummaryPoll();
+  summaryPollTimer = setInterval(async () => {
+    if (currentVacancyId !== vacancyId) { stopSummaryPoll(); return; }
+    try {
+      const res = await fetch(`${API}/api/vacancies`);
+      const vacancies = await res.json();
+      const v = vacancies.find(x => x.id === vacancyId);
+      if (v && v.requirements) {
+        allVacancies = vacancies;
+        currentVacancy = v;
+        showVacancyPanel(v);
+        stopSummaryPoll();
+      }
+    } catch { /* ignore */ }
+  }, 2000);
+}
+
+function stopSummaryPoll() {
+  if (summaryPollTimer) { clearInterval(summaryPollTimer); summaryPollTimer = null; }
 }
 
 // ── Vacancy CRUD ──────────────────────────────────────────────────────────────
@@ -72,20 +103,24 @@ function showVacancyPanel(v) {
 function openNewVacancyForm() {
   editingVacancyId = null;
   document.getElementById("vf-heading").textContent = "Новая вакансия";
+  document.getElementById("vf-url").value          = "";
   document.getElementById("vf-title").value        = "";
   document.getElementById("vf-desc").value         = "";
   document.getElementById("vf-requirements").value = "";
+  document.getElementById("vf-url-row").classList.remove("hidden");
   document.getElementById("vacancy-form-wrap").classList.remove("hidden");
-  document.getElementById("vf-title").focus();
+  document.getElementById("vf-url").focus();
 }
 
 function openEditVacancyForm() {
   if (!currentVacancy) return;
   editingVacancyId = currentVacancy.id;
   document.getElementById("vf-heading").textContent = "Редактировать вакансию";
+  document.getElementById("vf-url").value          = "";
   document.getElementById("vf-title").value        = currentVacancy.title;
   document.getElementById("vf-desc").value         = currentVacancy.description;
   document.getElementById("vf-requirements").value = currentVacancy.requirements || "";
+  document.getElementById("vf-url-row").classList.remove("hidden");
   document.getElementById("vacancy-form-wrap").classList.remove("hidden");
   document.getElementById("vf-title").focus();
 }
@@ -95,6 +130,29 @@ function closeVacancyForm() {
   document.getElementById("vacancy-form-wrap").classList.add("hidden");
 }
 
+async function loadVacancyFromUrl() {
+  const url = document.getElementById("vf-url").value.trim().replace(/^<|>$/g, "");
+  if (!url) return;
+  const btn = document.getElementById("btn-load-url");
+  btn.textContent = "Загружаем...";
+  btn.disabled = true;
+  try {
+    const res = await fetch(`${API}/api/parse-hh-vacancy?url=${encodeURIComponent(url)}`);
+    if (!res.ok) {
+      const err = await res.json();
+      alert(err.detail || "Не удалось загрузить вакансию");
+      return;
+    }
+    const data = await res.json();
+    document.getElementById("vf-title").value = data.title;
+    document.getElementById("vf-desc").value  = data.description;
+    document.getElementById("vf-requirements").value = "";
+  } finally {
+    btn.textContent = "Загрузить";
+    btn.disabled = false;
+  }
+}
+
 async function saveVacancy() {
   const title        = document.getElementById("vf-title").value.trim();
   const desc         = document.getElementById("vf-desc").value.trim();
@@ -102,14 +160,15 @@ async function saveVacancy() {
   if (!title || !desc) { alert("Заполните название и текст вакансии"); return; }
 
   const btn = document.getElementById("btn-save-vacancy");
-  btn.textContent = requirements ? "Сохраняем..." : "Генерируем summary...";
+  btn.textContent = "Сохраняем...";
   btn.disabled = true;
 
   const body = { title, description: desc, requirements: requirements || null };
+  const isEditing = !!editingVacancyId;
 
   try {
-    let res, v;
-    if (editingVacancyId) {
+    let res;
+    if (isEditing) {
       res = await fetch(`${API}/api/vacancies/${editingVacancyId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -122,7 +181,7 @@ async function saveVacancy() {
         body: JSON.stringify(body),
       });
     }
-    v = await res.json();
+    const v = await res.json();
 
     await loadVacancies();
     document.getElementById("vacancy-select").value = v.id;
@@ -131,7 +190,10 @@ async function saveVacancy() {
     showVacancyPanel(v);
     closeVacancyForm();
 
-    if (!editingVacancyId) {
+    // Если summary не было — запустить поллинг
+    if (!v.requirements) startSummaryPoll(v.id);
+
+    if (!isEditing) {
       document.getElementById("no-vacancy-state").classList.add("hidden");
       document.getElementById("app").classList.remove("hidden");
       await refreshData();
@@ -146,6 +208,7 @@ async function deleteVacancy() {
   if (!currentVacancy) return;
   if (!confirm(`Удалить вакансию «${currentVacancy.title}» и всех её кандидатов?`)) return;
 
+  stopSummaryPoll();
   await fetch(`${API}/api/vacancies/${currentVacancy.id}`, { method: "DELETE" });
   currentVacancyId = null;
   currentVacancy = null;
@@ -207,6 +270,9 @@ function renderCandidates() {
   list.querySelectorAll(".action-btn.undo").forEach(btn => {
     btn.addEventListener("click", () => setStatus(+btn.dataset.id, "new"));
   });
+  list.querySelectorAll(".action-btn.delete-candidate").forEach(btn => {
+    btn.addEventListener("click", () => deleteCandidate(+btn.dataset.id));
+  });
   list.querySelectorAll(".questions-toggle").forEach(btn => {
     btn.addEventListener("click", () => {
       const qList = document.getElementById(`q-${btn.dataset.id}`);
@@ -249,13 +315,15 @@ function buildCard(c) {
 }
 
 function buildActionButtons(c) {
-  if (c.status === "rejected")      return `<span style="font-size:12px;color:var(--text-muted)">Отказ отправлен</span>`;
-  if (c.status === "huntflow_sent") return `<span style="font-size:12px;color:var(--text-muted)">В Huntflow ✓</span>`;
-  if (c.status === "to_huntflow")   return `<button class="action-btn undo" data-id="${c.id}">✕ Отменить</button>`;
-  if (c.status === "to_reject")     return `<button class="action-btn undo" data-id="${c.id}">✕ Отменить</button>`;
+  const deleteBtn = `<button class="action-btn delete-candidate" data-id="${c.id}">🗑 Удалить</button>`;
+  if (c.status === "rejected")      return `<span style="font-size:12px;color:var(--text-muted)">Отказ отправлен</span>${deleteBtn}`;
+  if (c.status === "huntflow_sent") return `<span style="font-size:12px;color:var(--text-muted)">В Huntflow ✓</span>${deleteBtn}`;
+  if (c.status === "to_huntflow")   return `<button class="action-btn undo" data-id="${c.id}">✕ Отменить</button>${deleteBtn}`;
+  if (c.status === "to_reject")     return `<button class="action-btn undo" data-id="${c.id}">✕ Отменить</button>${deleteBtn}`;
   return `
     <button class="action-btn to-huntflow" data-id="${c.id}">→ В Huntflow</button>
     <button class="action-btn to-reject"   data-id="${c.id}">✕ Отказать</button>
+    ${deleteBtn}
   `;
 }
 
@@ -269,6 +337,16 @@ async function setStatus(id, status) {
   });
   const candidate = allCandidates.find(c => c.id === id);
   if (candidate) candidate.status = status;
+  renderCandidates();
+  await loadStats();
+}
+
+async function deleteCandidate(id) {
+  const candidate = allCandidates.find(c => c.id === id);
+  const name = candidate?.name || "кандидата";
+  if (!confirm(`Удалить ${name}?`)) return;
+  await fetch(`${API}/api/candidates/${id}`, { method: "DELETE" });
+  allCandidates = allCandidates.filter(c => c.id !== id);
   renderCandidates();
   await loadStats();
 }
@@ -296,6 +374,7 @@ async function bulkMarkForReject() {
 function setupListeners() {
   document.getElementById("vacancy-select").addEventListener("change", async e => {
     const id = e.target.value;
+    stopSummaryPoll();
     if (id) {
       await selectVacancy(parseInt(id));
     } else {
@@ -312,6 +391,7 @@ function setupListeners() {
   document.getElementById("btn-delete-vacancy").addEventListener("click", deleteVacancy);
   document.getElementById("btn-save-vacancy").addEventListener("click",   saveVacancy);
   document.getElementById("btn-cancel-vacancy").addEventListener("click", closeVacancyForm);
+  document.getElementById("btn-load-url").addEventListener("click",       loadVacancyFromUrl);
 
   document.getElementById("btn-toggle-desc").addEventListener("click", () => {
     const wrap = document.getElementById("vp-desc-wrap");
