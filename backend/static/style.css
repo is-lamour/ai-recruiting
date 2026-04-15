@@ -302,6 +302,7 @@ main { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
 .btn-success { background: var(--suitable); color: #fff; }
 .btn-danger  { background: var(--reject);   color: #fff; }
 .btn-primary { background: #3b82f6; color: #fff; }
+.btn-export  { background: #0f766e; color: #fff; }
 .btn-ghost {
   background: transparent;
   border: 1px solid var(--border);

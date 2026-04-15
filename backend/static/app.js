@@ -351,6 +351,31 @@ async function deleteCandidate(id) {
   await loadStats();
 }
 
+async function exportToExcel() {
+  if (!currentVacancyId) return;
+  const btn = document.getElementById("btn-export");
+  btn.textContent = "Готовим...";
+  btn.disabled = true;
+  try {
+    const res = await fetch(`${API}/api/vacancies/${currentVacancyId}/export`);
+    if (!res.ok) { alert("Ошибка при экспорте"); return; }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const title = (currentVacancy?.title || `вакансия_${currentVacancyId}`)
+      .replace(/[\\/:*?"<>|]/g, "_");
+    a.href = url;
+    a.download = `Скрининг_${title}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } finally {
+    btn.textContent = "↓ Экспорт в Excel";
+    btn.disabled = false;
+  }
+}
+
 async function bulkMarkForHuntflow() {
   if (!currentVacancyId) return;
   const count = allCandidates.filter(c => c.category === "suitable" && c.status === "new").length;
@@ -411,6 +436,7 @@ function setupListeners() {
 
   document.getElementById("btn-bulk-huntflow").addEventListener("click", bulkMarkForHuntflow);
   document.getElementById("btn-bulk-reject").addEventListener("click",   bulkMarkForReject);
+  document.getElementById("btn-export").addEventListener("click",        exportToExcel);
 
   document.getElementById("modal-close").addEventListener("click", () => {
     document.getElementById("modal-overlay").classList.add("hidden");

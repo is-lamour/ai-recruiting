@@ -1,13 +1,17 @@
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from typing import Optional
 import json
+import io
 import requests as http_requests
 from pathlib import Path
 from bs4 import BeautifulSoup
+import openpyxl
+from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 
 from database import init_db, get_db, row_to_dict
 from ai import screen_resume, summarize_vacancy
@@ -313,6 +317,153 @@ def delete_candidate(candidate_id: int):
         return {"status": "deleted"}
     finally:
         conn.close()
+
+
+# ── Export ────────────────────────────────────────────────────────────────────
+
+@app.get("/api/vacancies/{vacancy_id}/export")
+def export_candidates(vacancy_id: int):
+    conn = get_db()
+    try:
+        vacancy_row = conn.execute("SELECT * FROM vacancies WHERE id = ?", (vacancy_id,)).fetchone()
+        if not vacancy_row:
+            raise HTTPException(status_code=404, detail="Вакансия не найдена")
+        vacancy = row_to_dict(vacancy_row)
+
+        rows = conn.execute(
+            "SELECT * FROM candidates WHERE vacancy_id = ? ORDER BY score DESC", (vacancy_id,)
+        ).fetchall()
+        candidates = []
+        for r in rows:
+            d = row_to_dict(r)
+            d["questions"] = json.loads(d["questions"] or "[]")
+            candidates.append(d)
+    finally:
+        conn.close()
+
+    # ── Стили ─────────────────────────────────────────────────────────────────
+    FILLS = {
+        "suitable": PatternFill("solid", fgColor="DCFCE7"),
+        "consider":  PatternFill("solid", fgColor="FEF3C7"),
+        "reject":    PatternFill("solid", fgColor="FEE2E2"),
+        "pending":   PatternFill("solid", fgColor="F3F4F6"),
+    }
+    SCORE_FONT = {
+        "suitable": Font(bold=True, color="16A34A"),
+        "consider":  Font(bold=True, color="D97706"),
+        "reject":    Font(bold=True, color="DC2626"),
+        "pending":   Font(bold=True, color="6B7280"),
+    }
+    HEADER_FILL = PatternFill("solid", fgColor="1E293B")
+    HEADER_FONT = Font(bold=True, color="FFFFFF")
+    WRAP = Alignment(wrap_text=True, vertical="top")
+    thin = Side(style="thin", color="E2E8F0")
+    BORDER = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    CAT_LABELS = {"suitable": "Подходит", "consider": "Подумать", "reject": "Отказ", "pending": "Ожидание"}
+    STATUS_LABELS = {
+        "new": "", "to_reject": "На отказ", "to_huntflow": "В Huntflow",
+        "rejected": "Отказ отправлен", "huntflow_sent": "Отправлен в HF",
+    }
+
+    COLUMNS = [
+        ("Балл",       8),
+        ("Категория",  12),
+        ("Имя",        24),
+        ("Статус",     16),
+        ("Краткое резюме", 40),
+        ("Комментарий AI", 44),
+        ("Вопросы по пробелам", 50),
+        ("Ссылка",     36),
+    ]
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = vacancy["title"][:30]
+
+    # ── Шапка с названием вакансии ────────────────────────────────────────────
+    ws.merge_cells("A1:H1")
+    title_cell = ws["A1"]
+    title_cell.value = vacancy["title"]
+    title_cell.font = Font(bold=True, size=13, color="1E293B")
+    title_cell.alignment = Alignment(horizontal="left", vertical="center")
+    ws.row_dimensions[1].height = 22
+
+    if vacancy.get("requirements"):
+        ws.merge_cells("A2:H2")
+        req_cell = ws["A2"]
+        req_cell.value = vacancy["requirements"]
+        req_cell.font = Font(size=10, color="64748B")
+        req_cell.alignment = Alignment(wrap_text=True, vertical="top")
+        ws.row_dimensions[2].height = 40
+        header_row = 3
+    else:
+        header_row = 2
+
+    # ── Заголовки столбцов ────────────────────────────────────────────────────
+    for col_idx, (col_name, col_width) in enumerate(COLUMNS, start=1):
+        cell = ws.cell(row=header_row, column=col_idx, value=col_name)
+        cell.fill = HEADER_FILL
+        cell.font = HEADER_FONT
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = BORDER
+        ws.column_dimensions[get_column_letter(col_idx)].width = col_width
+    ws.row_dimensions[header_row].height = 20
+
+    # ── Строки кандидатов ────────────────────────────────────────────────────
+    for c in candidates:
+        cat = c.get("category") or "pending"
+        fill = FILLS.get(cat, FILLS["pending"])
+        score_font = SCORE_FONT.get(cat, SCORE_FONT["pending"])
+        questions_text = "\n".join(f"• {q}" for q in c["questions"]) if c["questions"] else ""
+
+        data_row = [
+            c.get("score"),
+            CAT_LABELS.get(cat, cat),
+            c.get("name") or "Кандидат",
+            STATUS_LABELS.get(c.get("status", "new"), ""),
+            c.get("summary") or "",
+            c.get("ai_comment") or "",
+            questions_text,
+            c.get("hh_url") or "",
+        ]
+
+        r = ws.max_row + 1
+        for col_idx, value in enumerate(data_row, start=1):
+            cell = ws.cell(row=r, column=col_idx, value=value)
+            cell.fill = fill
+            cell.alignment = WRAP
+            cell.border = BORDER
+            if col_idx == 1:
+                cell.font = score_font
+                cell.alignment = Alignment(horizontal="center", vertical="top")
+            if col_idx == 8 and value:  # ссылка
+                cell.hyperlink = value
+                cell.font = Font(color="2563EB", underline="single")
+
+        # Примерная высота строки
+        max_lines = max(
+            len(str(data_row[4] or "").split("\n")),
+            len(str(data_row[5] or "").split("\n")),
+            len(str(data_row[6] or "").split("\n")),
+            1
+        )
+        ws.row_dimensions[r].height = max(18, min(max_lines * 15, 90))
+
+    # ── Закрепить заголовок ───────────────────────────────────────────────────
+    ws.freeze_panes = ws.cell(row=header_row + 1, column=1)
+
+    # ── Отдать файл ───────────────────────────────────────────────────────────
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    filename = f"candidates_{vacancy_id}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
 
 
 # ── Stats ─────────────────────────────────────────────────────────────────────
