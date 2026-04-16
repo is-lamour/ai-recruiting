@@ -154,7 +154,7 @@ async function startScreening(vacancyId) {
 
       const name = link.name || "";
       saveProgress({ active: true, current: processed + errors, total, skipped, vacancyId, name });
-      await sleep(1200);
+      await sleep(600);
     }
 
   } catch (e) {

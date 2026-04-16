@@ -14,18 +14,26 @@ if not _api_key:
 
 genai.configure(api_key=_api_key)
 
-model = genai.GenerativeModel(
-    "gemini-2.5-flash",
+model_smart = genai.GenerativeModel(
+    "gemini-2.5-flash-lite",
     generation_config=genai.GenerationConfig(
         temperature=0,
-        max_output_tokens=8192,
+        max_output_tokens=1024,
+    ),
+)
+
+model_fast = genai.GenerativeModel(
+    "gemini-2.5-flash-lite",
+    generation_config=genai.GenerationConfig(
+        temperature=0,
+        max_output_tokens=256,
     ),
 )
 
 # ── Промпты ───────────────────────────────────────────────────────────────────
 
-VACANCY_SUMMARY_PROMPT = """Сожми требования вакансии в одну строку до 400 символов.
-Включи: ключевые навыки, стек технологий, опыт (лет), ключевые обязанности. Только суть.
+VACANCY_SUMMARY_PROMPT = """Сожми требования вакансии в одну строку до 600 символов.
+Включи: ключевые навыки, стек технологий, опыт (лет), ключевые обязанности. Только суть, без воды.
 
 ВАКАНСИЯ: {description}"""
 
@@ -40,17 +48,17 @@ SCREEN_PROMPT = """Ты HR. Оцени резюме по требованиям 
 def summarize_vacancy(description: str) -> str:
     """Сжимает описание вакансии в короткую строку требований."""
     prompt = VACANCY_SUMMARY_PROMPT.format(description=description[:4000])
-    response = model.generate_content(prompt)
-    return response.text.strip()[:500]
+    response = model_smart.generate_content(prompt)
+    return response.text.strip()[:700]
 
 
 def screen_resume(requirements: str, resume_text: str) -> dict:
     """Скринирует резюме по сжатым требованиям вакансии."""
     prompt = SCREEN_PROMPT.format(
-        requirements=requirements[:500],
+        requirements=requirements[:700],
         resume_text=resume_text[:3000],
     )
-    response = model.generate_content(prompt)
+    response = model_fast.generate_content(prompt)
     finish = response.candidates[0].finish_reason if response.candidates else "?"
     text = response.text.strip()
     print(f"[AI finish={finish}] FULL: {repr(text)}")
