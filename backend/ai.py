@@ -5,30 +5,18 @@ from dotenv import load_dotenv
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
 
-_api_key = os.getenv("GEMINI_API_KEY")
-if not _api_key:
-    raise RuntimeError(
-        "GEMINI_API_KEY не задан. Создайте файл .env рядом с start.bat "
-        "и добавьте строку: GEMINI_API_KEY=ваш_ключ"
+_fallback_key = os.getenv("GEMINI_API_KEY")
+
+MODEL_NAME = "gemini-2.5-flash-lite"
+
+def _make_models(api_key: str):
+    cfg_smart = genai.GenerationConfig(temperature=0, max_output_tokens=1024)
+    cfg_fast  = genai.GenerationConfig(temperature=0, max_output_tokens=256)
+    genai.configure(api_key=api_key)
+    return (
+        genai.GenerativeModel(MODEL_NAME, generation_config=cfg_smart),
+        genai.GenerativeModel(MODEL_NAME, generation_config=cfg_fast),
     )
-
-genai.configure(api_key=_api_key)
-
-model_smart = genai.GenerativeModel(
-    "gemini-3.1-flash-lite",
-    generation_config=genai.GenerationConfig(
-        temperature=0,
-        max_output_tokens=1024,
-    ),
-)
-
-model_fast = genai.GenerativeModel(
-    "gemini-3.1-flash-lite",
-    generation_config=genai.GenerationConfig(
-        temperature=0,
-        max_output_tokens=256,
-    ),
-)
 
 # ── Промпты ───────────────────────────────────────────────────────────────────
 
@@ -45,15 +33,26 @@ SCREEN_PROMPT = """Ты HR. Оцени резюме по требованиям 
 РЕЗЮМЕ:{resume_text}"""
 
 
-def summarize_vacancy(description: str) -> str:
-    """Сжимает описание вакансии в короткую строку требований."""
+def _resolve_key(api_key: str | None) -> str:
+    key = api_key or _fallback_key
+    if not key:
+        raise RuntimeError(
+            "GEMINI_API_KEY не задан. Введите ключ в расширении или создайте .env файл."
+        )
+    return key
+
+
+def summarize_vacancy(description: str, api_key: str | None = None) -> str:
+    key = _resolve_key(api_key)
+    model_smart, _ = _make_models(key)
     prompt = VACANCY_SUMMARY_PROMPT.format(description=description[:4000])
     response = model_smart.generate_content(prompt)
     return response.text.strip()[:700]
 
 
-def screen_resume(requirements: str, resume_text: str) -> dict:
-    """Скринирует резюме по сжатым требованиям вакансии."""
+def screen_resume(requirements: str, resume_text: str, api_key: str | None = None) -> dict:
+    key = _resolve_key(api_key)
+    _, model_fast = _make_models(key)
     prompt = SCREEN_PROMPT.format(
         requirements=requirements[:700],
         resume_text=resume_text[:3000],

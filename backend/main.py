@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
@@ -69,10 +69,14 @@ class StatusUpdate(BaseModel):
 
 # ── Background tasks ──────────────────────────────────────────────────────────
 
-def _generate_summary_bg(vacancy_id: int, description: str):
+def _get_gemini_key(request: Request) -> Optional[str]:
+    return request.headers.get("X-Gemini-Key") or None
+
+
+def _generate_summary_bg(vacancy_id: int, description: str, api_key: Optional[str] = None):
     """Генерирует summary вакансии в фоне и сохраняет в БД."""
     try:
-        requirements = summarize_vacancy(description)
+        requirements = summarize_vacancy(description, api_key=api_key)
         conn = get_db()
         try:
             conn.execute(
@@ -101,8 +105,9 @@ def list_vacancies():
 
 
 @app.post("/api/vacancies")
-def create_vacancy(data: VacancyCreate, background_tasks: BackgroundTasks):
+def create_vacancy(request: Request, data: VacancyCreate, background_tasks: BackgroundTasks):
     manual_req = data.requirements.strip() if data.requirements and data.requirements.strip() else None
+    api_key = _get_gemini_key(request)
     conn = get_db()
     try:
         cur = conn.execute(
@@ -112,7 +117,7 @@ def create_vacancy(data: VacancyCreate, background_tasks: BackgroundTasks):
         conn.commit()
         vacancy_id = cur.lastrowid
         if not manual_req:
-            background_tasks.add_task(_generate_summary_bg, vacancy_id, data.description)
+            background_tasks.add_task(_generate_summary_bg, vacancy_id, data.description, api_key)
         row = conn.execute("SELECT * FROM vacancies WHERE id = ?", (vacancy_id,)).fetchone()
         return row_to_dict(row)
     finally:
@@ -120,8 +125,9 @@ def create_vacancy(data: VacancyCreate, background_tasks: BackgroundTasks):
 
 
 @app.put("/api/vacancies/{vacancy_id}")
-def update_vacancy(vacancy_id: int, data: VacancyCreate, background_tasks: BackgroundTasks):
+def update_vacancy(vacancy_id: int, request: Request, data: VacancyCreate, background_tasks: BackgroundTasks):
     manual_req = data.requirements.strip() if data.requirements and data.requirements.strip() else None
+    api_key = _get_gemini_key(request)
     conn = get_db()
     try:
         conn.execute(
@@ -130,7 +136,7 @@ def update_vacancy(vacancy_id: int, data: VacancyCreate, background_tasks: Backg
         )
         conn.commit()
         if not manual_req:
-            background_tasks.add_task(_generate_summary_bg, vacancy_id, data.description)
+            background_tasks.add_task(_generate_summary_bg, vacancy_id, data.description, api_key)
         row = conn.execute("SELECT * FROM vacancies WHERE id = ?", (vacancy_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Не найдено")
@@ -215,7 +221,7 @@ def parse_hh_vacancy(url: str):
 # ── Screening ─────────────────────────────────────────────────────────────────
 
 @app.post("/api/screen")
-def screen_candidate(data: CandidateScreen):
+def screen_candidate(request: Request, data: CandidateScreen):
     conn = get_db()
     try:
         existing = conn.execute(
@@ -234,7 +240,7 @@ def screen_candidate(data: CandidateScreen):
             raise HTTPException(status_code=404, detail="Вакансия не найдена")
 
         requirements = vacancy["requirements"] or vacancy["description"][:500]
-        result = screen_resume(requirements, data.resume_text)
+        result = screen_resume(requirements, data.resume_text, api_key=_get_gemini_key(request))
 
         cur = conn.execute(
             """INSERT INTO candidates

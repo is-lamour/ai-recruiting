@@ -8,6 +8,34 @@
   <div class="header">
     <span class="logo">⚡</span>
     <span class="title">HH Автоскрининг</span>
+    <button class="btn-icon" id="btn-settings" title="Настройки API ключа">⚙</button>
+  </div>
+
+  <!-- Экран настройки API ключа -->
+  <div id="setup-screen" class="hidden">
+    <div class="section setup-section">
+      <p class="setup-title">Введите Gemini API ключ</p>
+      <p class="setup-hint">Получить ключ можно на <a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com</a></p>
+      <div class="key-input-row">
+        <input type="password" id="setup-api-key" placeholder="AIza..." autocomplete="off" />
+        <button class="btn-eye" id="btn-eye-setup" type="button">👁</button>
+      </div>
+      <button class="btn btn-primary" id="btn-save-setup-key">Сохранить и продолжить</button>
+    </div>
+  </div>
+
+  <!-- Панель настроек (открывается по кнопке ⚙) -->
+  <div id="settings-panel" class="hidden section">
+    <label class="label">Gemini API ключ</label>
+    <div class="key-input-row">
+      <input type="password" id="settings-api-key" placeholder="AIza..." autocomplete="off" />
+      <button class="btn-eye" id="btn-eye-settings" type="button">👁</button>
+    </div>
+    <div class="row">
+      <button class="btn btn-primary" id="btn-save-settings-key">Сохранить</button>
+      <button class="btn btn-ghost"   id="btn-close-settings">Отмена</button>
+    </div>
+    <button class="link-btn danger-link" id="btn-clear-key">Удалить ключ</button>
   </div>
 
   <div id="page-status" class="status-bar"></div>

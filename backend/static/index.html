@@ -18,8 +18,30 @@
         <option value="">— Выберите вакансию —</option>
       </select>
       <button class="btn btn-primary" id="btn-new-vacancy">+ Вакансия</button>
+      <button class="btn btn-ghost btn-sm" id="btn-api-settings" title="Настройки API ключа">⚙ API</button>
     </div>
   </header>
+
+  <!-- Модалка настройки API ключа -->
+  <div id="api-key-modal" class="modal-overlay hidden">
+    <div class="modal" style="max-width:420px">
+      <button class="modal-close" id="api-key-modal-close">✕</button>
+      <h3 style="margin-bottom:12px">Gemini API ключ</h3>
+      <p style="font-size:13px;color:#64748b;margin-bottom:12px">
+        Ключ хранится в браузере и отправляется на локальный бэкенд.<br>
+        Получить: <a href="https://aistudio.google.com/apikey" target="_blank" style="color:#3b82f6">aistudio.google.com/apikey</a>
+      </p>
+      <div style="display:flex;gap:6px;margin-bottom:12px">
+        <input type="password" id="api-key-input" placeholder="AIza..." autocomplete="off" style="flex:1" />
+        <button class="btn btn-ghost btn-sm" id="btn-eye-api" style="flex:0;padding:7px 10px">👁</button>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" id="btn-save-api-key">Сохранить</button>
+        <button class="btn btn-ghost"   id="btn-cancel-api-key">Отмена</button>
+        <button class="btn btn-ghost"   id="btn-clear-api-key" style="margin-left:auto;color:#dc2626">Удалить ключ</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Панель вакансии -->
   <div id="vacancy-panel" class="vacancy-panel hidden">
@@ -129,6 +151,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=5"></script>
+  <script src="/static/app.js?v=6"></script>
 </body>
 </html>

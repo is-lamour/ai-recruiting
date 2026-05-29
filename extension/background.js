@@ -1,5 +1,12 @@
 const API = "http://localhost:8000";
 
+async function apiHeaders(extra = {}) {
+  const d = await chrome.storage.local.get("geminiApiKey");
+  const headers = { "Content-Type": "application/json", ...extra };
+  if (d.geminiApiKey) headers["X-Gemini-Key"] = d.geminiApiKey;
+  return headers;
+}
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   // Хранилище (content scripts не могут обращаться к storage.session напрямую)
@@ -32,50 +39,58 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
 
   if (message.action === "api_get") {
-    fetch(`${API}${message.path}`)
-      .then(async res => {
-        const data = await res.json().catch(() => ({}));
-        sendResponse({ ok: res.ok, status: res.status, data });
-      })
-      .catch(err => sendResponse({ ok: false, error: err.message }));
+    apiHeaders().then(headers =>
+      fetch(`${API}${message.path}`, { headers })
+        .then(async res => {
+          const data = await res.json().catch(() => ({}));
+          sendResponse({ ok: res.ok, status: res.status, data });
+        })
+        .catch(err => sendResponse({ ok: false, error: err.message }))
+    );
     return true;
   }
 
   if (message.action === "api_post") {
-    fetch(`${API}${message.path}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(message.body),
-    })
-      .then(async res => {
-        const data = await res.json().catch(() => ({}));
-        sendResponse({ ok: res.ok, status: res.status, data });
+    apiHeaders().then(headers =>
+      fetch(`${API}${message.path}`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(message.body),
       })
-      .catch(err => sendResponse({ ok: false, error: err.message }));
+        .then(async res => {
+          const data = await res.json().catch(() => ({}));
+          sendResponse({ ok: res.ok, status: res.status, data });
+        })
+        .catch(err => sendResponse({ ok: false, error: err.message }))
+    );
     return true;
   }
 
   if (message.action === "api_patch") {
-    fetch(`${API}${message.path}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(message.body),
-    })
-      .then(async res => {
-        const data = await res.json().catch(() => ({}));
-        sendResponse({ ok: res.ok, status: res.status, data });
+    apiHeaders().then(headers =>
+      fetch(`${API}${message.path}`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify(message.body),
       })
-      .catch(err => sendResponse({ ok: false, error: err.message }));
+        .then(async res => {
+          const data = await res.json().catch(() => ({}));
+          sendResponse({ ok: res.ok, status: res.status, data });
+        })
+        .catch(err => sendResponse({ ok: false, error: err.message }))
+    );
     return true;
   }
 
   if (message.action === "api_delete") {
-    fetch(`${API}${message.path}`, { method: "DELETE" })
-      .then(async res => {
-        const data = await res.json().catch(() => ({}));
-        sendResponse({ ok: res.ok, status: res.status, data });
-      })
-      .catch(err => sendResponse({ ok: false, error: err.message }));
+    apiHeaders().then(headers =>
+      fetch(`${API}${message.path}`, { method: "DELETE", headers })
+        .then(async res => {
+          const data = await res.json().catch(() => ({}));
+          sendResponse({ ok: res.ok, status: res.status, data });
+        })
+        .catch(err => sendResponse({ ok: false, error: err.message }))
+    );
     return true;
   }
 

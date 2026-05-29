@@ -1,4 +1,12 @@
 const API = "";  // same origin
+
+function getApiKey() { return localStorage.getItem("geminiApiKey") || ""; }
+function apiHeaders(extra = {}) {
+  const h = { "Content-Type": "application/json", ...extra };
+  const k = getApiKey();
+  if (k) h["X-Gemini-Key"] = k;
+  return h;
+}
 let currentVacancyId = null;
 let currentVacancy = null;
 let allVacancies = [];
@@ -171,13 +179,13 @@ async function saveVacancy() {
     if (isEditing) {
       res = await fetch(`${API}/api/vacancies/${editingVacancyId}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: apiHeaders(),
         body: JSON.stringify(body),
       });
     } else {
       res = await fetch(`${API}/api/vacancies`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: apiHeaders(),
         body: JSON.stringify(body),
       });
     }
@@ -443,6 +451,41 @@ function setupListeners() {
   });
   document.getElementById("modal-overlay").addEventListener("click", e => {
     if (e.target === e.currentTarget) e.currentTarget.classList.add("hidden");
+  });
+
+  // API key modal
+  document.getElementById("btn-api-settings").addEventListener("click", () => {
+    const key = getApiKey();
+    const input = document.getElementById("api-key-input");
+    input.type = "password";
+    input.value = key || "";
+    document.getElementById("btn-eye-api").textContent = "👁";
+    document.getElementById("api-key-modal").classList.remove("hidden");
+  });
+  document.getElementById("api-key-modal-close").addEventListener("click", () => {
+    document.getElementById("api-key-modal").classList.add("hidden");
+  });
+  document.getElementById("btn-cancel-api-key").addEventListener("click", () => {
+    document.getElementById("api-key-modal").classList.add("hidden");
+  });
+  document.getElementById("btn-eye-api").addEventListener("click", () => {
+    const input = document.getElementById("api-key-input");
+    const btn   = document.getElementById("btn-eye-api");
+    const isHidden = input.type === "password";
+    input.type = isHidden ? "text" : "password";
+    btn.textContent = isHidden ? "🙈" : "👁";
+  });
+  document.getElementById("btn-save-api-key").addEventListener("click", () => {
+    const val = document.getElementById("api-key-input").value.trim();
+    if (!val) { alert("Введите API ключ"); return; }
+    localStorage.setItem("geminiApiKey", val);
+    document.getElementById("api-key-modal").classList.add("hidden");
+    alert("Ключ сохранён");
+  });
+  document.getElementById("btn-clear-api-key").addEventListener("click", () => {
+    if (!confirm("Удалить API ключ?")) return;
+    localStorage.removeItem("geminiApiKey");
+    document.getElementById("api-key-modal").classList.add("hidden");
   });
 }
 

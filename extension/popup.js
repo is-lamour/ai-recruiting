@@ -10,12 +10,71 @@ const $ = id => document.getElementById(id);
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 document.addEventListener("DOMContentLoaded", async () => {
+  const hasKey = await initApiKey();
+  if (!hasKey) return;
   await detectTab();
   await checkBackend();
   await loadVacancies();
   bindEvents();
   await restoreState();
 });
+
+// ── API Key management ────────────────────────────────────────────────────────
+
+async function getApiKey() {
+  const d = await chrome.storage.local.get("geminiApiKey");
+  return d.geminiApiKey || null;
+}
+
+async function saveApiKey(key) {
+  await chrome.storage.local.set({ geminiApiKey: key });
+}
+
+function toggleEye(inputId, btnId) {
+  const input = $(inputId);
+  const btn   = $(btnId);
+  if (!input || !btn) return;
+  btn.addEventListener("click", () => {
+    const isHidden = input.type === "password";
+    input.type = isHidden ? "text" : "password";
+    btn.textContent = isHidden ? "🙈" : "👁";
+  });
+}
+
+async function initApiKey() {
+  const key = await getApiKey();
+  if (!key) {
+    $("setup-screen").classList.remove("hidden");
+    toggleEye("setup-api-key", "btn-eye-setup");
+    $("btn-save-setup-key").addEventListener("click", async () => {
+      const val = $("setup-api-key").value.trim();
+      if (!val) { alert("Введите API ключ"); return; }
+      await saveApiKey(val);
+      $("setup-screen").classList.add("hidden");
+      await detectTab();
+      await checkBackend();
+      await loadVacancies();
+      bindEvents();
+      await restoreState();
+    });
+    return false;
+  }
+  return true;
+}
+
+function openSettings() {
+  const panel = $("settings-panel");
+  const isHidden = panel.classList.contains("hidden");
+  panel.classList.toggle("hidden", !isHidden);
+  if (isHidden) {
+    getApiKey().then(k => {
+      const input = $("settings-api-key");
+      input.type = "password";
+      input.value = k || "";
+      $("btn-eye-settings").textContent = "👁";
+    });
+  }
+}
 
 async function detectTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -397,6 +456,25 @@ async function runDiagnose() {
 // ── Event binding ─────────────────────────────────────────────────────────────
 
 function bindEvents() {
+  $("btn-settings").addEventListener("click", openSettings);
+  toggleEye("settings-api-key", "btn-eye-settings");
+  $("btn-save-settings-key").addEventListener("click", async () => {
+    const val = $("settings-api-key").value.trim();
+    if (!val) { alert("Введите API ключ"); return; }
+    await saveApiKey(val);
+    $("settings-panel").classList.add("hidden");
+    alert("Ключ сохранён");
+  });
+  $("btn-close-settings").addEventListener("click", () => {
+    $("settings-panel").classList.add("hidden");
+  });
+  $("btn-clear-key").addEventListener("click", async () => {
+    if (!confirm("Удалить API ключ? Расширение попросит ввести новый при следующем открытии.")) return;
+    await chrome.storage.local.remove("geminiApiKey");
+    $("settings-panel").classList.add("hidden");
+    window.location.reload();
+  });
+
   $("vacancy-select").addEventListener("change", e => onVacancyChange(e.target.value));
   $("btn-new-vacancy").addEventListener("click",    openNewVacancyForm);
   $("btn-edit-vacancy").addEventListener("click",   openEditVacancyForm);

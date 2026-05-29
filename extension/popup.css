@@ -17,7 +17,57 @@ body {
   background: #f8fafc;
 }
 .logo  { font-size: 18px; }
-.title { font-size: 14px; font-weight: 700; }
+.title { font-size: 14px; font-weight: 700; flex: 1; }
+
+.btn-icon {
+  background: none;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  color: #64748b;
+  padding: 2px 4px;
+  border-radius: 4px;
+  line-height: 1;
+}
+.btn-icon:hover { background: #e2e8f0; }
+
+.setup-section {
+  padding: 20px 16px;
+}
+.setup-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1e293b;
+}
+.setup-hint {
+  font-size: 11px;
+  color: #64748b;
+}
+.setup-hint a { color: #3b82f6; }
+
+.danger-link {
+  color: #dc2626;
+}
+
+.key-input-row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.key-input-row input {
+  flex: 1;
+}
+.btn-eye {
+  background: none;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 6px 8px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #64748b;
+  flex-shrink: 0;
+}
+.btn-eye:hover { background: #f1f5f9; }
 
 .status-bar {
   padding: 7px 16px;
