@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HH Автоскрининг</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+  <header>
+    <div class="header-left">
+      <span class="logo">⚡</span>
+      <h1>HH Автоскрининг</h1>
+    </div>
+    <div class="header-right">
+      <select id="vacancy-select">
+        <option value="">— Выберите вакансию —</option>
+      </select>
+      <button class="btn btn-primary" id="btn-new-vacancy">+ Вакансия</button>
+    </div>
+  </header>
+
+  <!-- Панель вакансии -->
+  <div id="vacancy-panel" class="vacancy-panel hidden">
+    <div class="vacancy-info">
+      <div class="vacancy-info-text">
+        <div class="vacancy-info-title" id="vp-title"></div>
+        <div class="vacancy-info-req" id="vp-requirements"></div>
+      </div>
+      <div class="vacancy-info-actions">
+        <button class="btn btn-ghost btn-sm" id="btn-toggle-desc">▾ Описание</button>
+        <button class="btn btn-ghost btn-sm" id="btn-edit-vacancy">✏️ Изменить</button>
+        <button class="btn btn-danger-sm" id="btn-delete-vacancy">🗑</button>
+      </div>
+    </div>
+    <div id="vp-desc-wrap" class="vacancy-desc-wrap hidden">
+      <pre id="vp-description"></pre>
+    </div>
+  </div>
+
+  <!-- Форма создания/редактирования вакансии -->
+  <div id="vacancy-form-wrap" class="vacancy-form-wrap hidden">
+    <div class="vacancy-form">
+      <h3 id="vf-heading">Новая вакансия</h3>
+      <div id="vf-url-row" class="vf-url-row">
+        <input type="text" id="vf-url" placeholder="Ссылка на вакансию hh.kz (необязательно)" />
+        <button class="btn btn-ghost btn-sm" id="btn-load-url">Загрузить</button>
+      </div>
+      <input  type="text" id="vf-title"  placeholder="Название (напр. Системный аналитик)" />
+      <textarea id="vf-desc" rows="6" placeholder="Вставьте текст вакансии с требованиями..."></textarea>
+      <label class="vf-label">Summary (ключевые требования для скрининга)</label>
+      <textarea id="vf-requirements" rows="3" placeholder="Оставьте пустым — AI сформирует автоматически (~5 сек в фоне)"></textarea>
+      <div class="vf-note">Если заполните summary вручную — AI-генерация пропускается. Иначе summary появится через несколько секунд после сохранения.</div>
+      <div class="row gap">
+        <button class="btn btn-primary" id="btn-save-vacancy">Сохранить</button>
+        <button class="btn btn-ghost"   id="btn-cancel-vacancy">Отмена</button>
+      </div>
+    </div>
+  </div>
+
+  <main>
+    <!-- Заглушка при отсутствии выбранной вакансии -->
+    <div id="no-vacancy-state" class="empty-screen">
+      <div class="empty-icon">📋</div>
+      <p>Выберите вакансию для просмотра кандидатов</p>
+      <small>Или запустите скрининг через расширение Chrome на странице откликов hh.kz</small>
+    </div>
+
+    <!-- Основной контент -->
+    <div id="app" class="hidden">
+
+      <!-- Статистика -->
+      <div class="stats-bar">
+        <div class="stat-card">
+          <div class="stat-num" id="stat-total">0</div>
+          <div class="stat-label">Всего</div>
+        </div>
+        <div class="stat-card suitable">
+          <div class="stat-num" id="stat-suitable">0</div>
+          <div class="stat-label">Подходят ✓</div>
+        </div>
+        <div class="stat-card consider">
+          <div class="stat-num" id="stat-consider">0</div>
+          <div class="stat-label">Подумать</div>
+        </div>
+        <div class="stat-card reject">
+          <div class="stat-num" id="stat-reject">0</div>
+          <div class="stat-label">Отказ ✗</div>
+        </div>
+      </div>
+
+      <!-- Фильтры + массовые действия -->
+      <div class="toolbar">
+        <div class="filters">
+          <button class="filter-btn active" data-filter="all">Все</button>
+          <button class="filter-btn" data-filter="suitable">Подходят</button>
+          <button class="filter-btn" data-filter="consider">Подумать</button>
+          <button class="filter-btn" data-filter="reject">Отказ</button>
+        </div>
+        <div class="bulk-actions">
+          <button id="btn-bulk-huntflow" class="btn btn-success">
+            → В Huntflow (все «Подходят»)
+          </button>
+          <button id="btn-bulk-reject" class="btn btn-danger">
+            ✕ На отказ в HH (все «Отказ»)
+          </button>
+          <button id="btn-export" class="btn btn-export">
+            ↓ Экспорт в Excel
+          </button>
+        </div>
+      </div>
+
+      <!-- Список кандидатов -->
+      <div id="candidates-list"></div>
+
+      <div id="empty-filter-state" class="empty-screen hidden">
+        <p>Нет кандидатов в этой категории</p>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Модалка с деталями кандидата -->
+  <div id="modal-overlay" class="modal-overlay hidden">
+    <div class="modal">
+      <button class="modal-close" id="modal-close">✕</button>
+      <div id="modal-content"></div>
+    </div>
+  </div>
+
+  <script src="/static/app.js?v=5"></script>
+</body>
+</html>

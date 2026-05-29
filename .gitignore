@@ -1,0 +1,16 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.db
+*.sqlite3
+
+# Venv
+venv/
+.venv/
+env/
+
+# Claude internal
+.claude/

@@ -1,0 +1,53 @@
+НЕОБХОДИМЫЕ БИБЛИОТЕКИ — ai-recruiting
+========================================
+
+BACKEND (Python)
+----------------
+
+fastapi==0.115.0
+  REST API фреймворк. Обрабатывает все HTTP-запросы: вакансии, кандидаты,
+  скрининг, экспорт, статистика.
+
+uvicorn[standard]==0.32.0
+  ASGI-сервер для запуска FastAPI. Флаг [standard] включает поддержку
+  WebSocket и ускоренный event loop (watchfiles, httptools).
+
+google-generativeai==0.8.3
+  Официальный Python SDK для Google Gemini API. Используется для:
+  - сжатия текста вакансии в краткие требования (gemini-2.5-flash-lite)
+  - скоринга резюме: оценка 0-100, категория, комментарий, вопросы кандидату
+
+python-dotenv==1.0.1
+  Загружает GEMINI_API_KEY из файла .env в переменные окружения.
+
+requests==2.32.3
+  HTTP-клиент. Используется для загрузки страниц вакансий hh.kz
+  при парсинге по URL (эндпоинт /api/parse-hh-vacancy).
+
+beautifulsoup4==4.12.3
+  Парсинг HTML. Извлекает заголовок и описание вакансии из страницы hh.kz.
+
+openpyxl==3.1.5
+  Генерация Excel-файлов. Экспортирует список кандидатов с цветовой
+  разметкой по категориям (suitable / consider / reject).
+
+
+CHROME EXTENSION (JavaScript)
+------------------------------
+
+Сторонние npm-зависимости отсутствуют.
+Используются только встроенные браузерные API:
+
+chrome.runtime      — обмен сообщениями между popup, content script и background
+chrome.tabs         — управление вкладками (открытие резюме, определение активной вкладки)
+chrome.storage.session — хранение прогресса скрининга и состояния отмены
+fetch (browser)     — HTTP-запросы к backend (http://localhost:8000) и к hh.kz
+DOMParser           — парсинг HTML резюме на стороне браузера
+
+
+УСТАНОВКА
+---------
+
+1. Скопируйте .env.example в .env и добавьте GEMINI_API_KEY
+2. pip install -r backend/requirements.txt
+3. Запустите: start.bat  (или вручную: cd backend && python -m uvicorn main:app --port 8000 --reload)

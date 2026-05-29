@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="header">
+    <span class="logo">⚡</span>
+    <span class="title">HH Автоскрининг</span>
+  </div>
+
+  <div id="page-status" class="status-bar"></div>
+
+  <!-- Вакансия -->
+  <div class="section">
+    <label class="label">Вакансия</label>
+    <div class="row">
+      <select id="vacancy-select" style="flex:1"></select>
+      <button class="btn btn-ghost" id="btn-edit-vacancy"   title="Редактировать" style="flex:0;padding:7px 10px;display:none">✏️</button>
+      <button class="btn btn-ghost" id="btn-delete-vacancy" title="Удалить вакансию" style="flex:0;padding:7px 10px;display:none">🗑</button>
+    </div>
+    <button class="link-btn" id="btn-new-vacancy">+ Добавить вакансию</button>
+  </div>
+
+  <!-- Форма новой/редактируемой вакансии -->
+  <div id="new-vacancy-form" class="hidden section">
+    <div class="row" style="margin-bottom:6px">
+      <input type="text" id="vacancy-url" placeholder="Ссылка на вакансию hh.kz (необязательно)" style="flex:1;font-size:11px" />
+      <button class="btn btn-ghost" id="btn-parse-url" style="flex:0;white-space:nowrap;font-size:11px">Загрузить</button>
+    </div>
+    <input type="text" id="vacancy-title" placeholder="Название (напр. Оператор КЦ)" />
+    <textarea id="vacancy-desc" rows="6" placeholder="Вставьте текст вакансии с требованиями и обязанностями..."></textarea>
+    <div class="row">
+      <button class="btn btn-primary" id="btn-save-vacancy">Сохранить</button>
+      <button class="btn btn-ghost"   id="btn-cancel-vacancy">Отмена</button>
+    </div>
+  </div>
+
+  <!-- Управление скринингом -->
+  <div id="screening-section" class="section hidden">
+    <div id="progress-wrap" class="hidden">
+      <div class="progress-bar"><div id="progress-fill" style="width:0%"></div></div>
+      <p id="progress-text" class="progress-text">Инициализация...</p>
+    </div>
+
+    <div class="row">
+      <button class="btn btn-primary" id="btn-start">▶ Запустить скрининг</button>
+      <button class="btn btn-danger hidden" id="btn-stop">■ Стоп</button>
+      <button class="btn btn-ghost"   id="btn-dashboard">📊 Дашборд</button>
+    </div>
+    <button class="link-btn" id="btn-diagnose">🔍 Диагностика страницы</button>
+    <p id="diagnose-result" style="font-size:11px;color:#64748b;margin-top:4px;white-space:pre-wrap;word-break:break-all;"></p>
+  </div>
+
+  <!-- Ожидающие действия -->
+  <div id="actions-section" class="section hidden">
+    <p class="section-title">Ожидают выполнения на HH</p>
+    <button class="btn btn-danger  hidden" id="btn-do-rejections">✕ Выполнить отказы (<span id="reject-count">0</span>)</button>
+    <button class="btn btn-success hidden" id="btn-do-huntflow">→ Открыть в Huntflow (<span id="huntflow-count">0</span>)</button>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
