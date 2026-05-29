@@ -405,4 +405,3 @@ async function runAutoReject() {
   }
 }
 
-setInterval(runAutoReject, 30000);
