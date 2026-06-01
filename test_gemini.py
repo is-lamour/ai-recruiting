@@ -1,10 +1,13 @@
 import os
+from pathlib import Path
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(dotenv_path=Path(__file__).parent / ".env")
 
 import google.generativeai as genai
 
 api_key = os.getenv("GEMINI_API_KEY")
+if not api_key:
+    raise RuntimeError("GEMINI_API_KEY не найден в .env файле")
 print(f"API key: {api_key[:10]}...{api_key[-4:]}")
 
 genai.configure(api_key=api_key)

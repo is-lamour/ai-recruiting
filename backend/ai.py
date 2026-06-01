@@ -7,7 +7,7 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 _fallback_key = os.getenv("GEMINI_API_KEY")
 
-MODEL_NAME = "gemini-2.5-flash-lite"
+MODEL_NAME = "gemini-3.1-flash-lite"
 
 def _make_models(api_key: str):
     cfg_smart = genai.GenerationConfig(temperature=0, max_output_tokens=1024)
