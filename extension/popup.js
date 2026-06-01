@@ -208,11 +208,15 @@ async function saveVacancy() {
   const requirements = $("vacancy-requirements").value.trim() || null;
   if (!title || !desc) { alert("Заполните название и текст вакансии"); return; }
 
+  const apiKey = await getApiKey();
+  const headers = { "Content-Type": "application/json" };
+  if (apiKey) headers["X-Gemini-Key"] = apiKey;
+
   if (editingVacancyId) {
     // Редактирование существующей
     const res = await fetch(`${API}/api/vacancies/${editingVacancyId}`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({ title, description: desc, requirements }),
     });
     const v = await res.json();
@@ -230,7 +234,7 @@ async function saveVacancy() {
     // Создание новой
     const res = await fetch(`${API}/api/vacancies`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({ title, description: desc, requirements }),
     });
     const v = await res.json();
