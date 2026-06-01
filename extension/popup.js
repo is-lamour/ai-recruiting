@@ -177,9 +177,10 @@ async function loadVacancies() {
 
 function openNewVacancyForm() {
   editingVacancyId = null;
-  $("vacancy-title").value = "";
-  $("vacancy-desc").value  = "";
-  $("vacancy-url").value   = "";
+  $("vacancy-title").value        = "";
+  $("vacancy-desc").value         = "";
+  $("vacancy-url").value          = "";
+  $("vacancy-requirements").value = "";
   $("new-vacancy-form").classList.toggle("hidden");
 }
 
@@ -193,16 +194,18 @@ function openEditVacancyForm() {
     .then(vacancies => {
       const v = vacancies.find(x => String(x.id) === String(selectedVacancyId));
       if (!v) return;
-      $("vacancy-title").value = v.title;
-      $("vacancy-desc").value  = v.description;
-      $("vacancy-url").value   = "";
+      $("vacancy-title").value        = v.title;
+      $("vacancy-desc").value         = v.description;
+      $("vacancy-url").value          = "";
+      $("vacancy-requirements").value = v.requirements || "";
       $("new-vacancy-form").classList.remove("hidden");
     });
 }
 
 async function saveVacancy() {
-  const title = $("vacancy-title").value.trim();
-  const desc  = $("vacancy-desc").value.trim();
+  const title        = $("vacancy-title").value.trim();
+  const desc         = $("vacancy-desc").value.trim();
+  const requirements = $("vacancy-requirements").value.trim() || null;
   if (!title || !desc) { alert("Заполните название и текст вакансии"); return; }
 
   if (editingVacancyId) {
@@ -210,7 +213,7 @@ async function saveVacancy() {
     const res = await fetch(`${API}/api/vacancies/${editingVacancyId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, description: desc }),
+      body: JSON.stringify({ title, description: desc, requirements }),
     });
     const v = await res.json();
 
@@ -220,14 +223,15 @@ async function saveVacancy() {
 
     editingVacancyId = null;
     $("new-vacancy-form").classList.add("hidden");
-    $("vacancy-title").value = "";
-    $("vacancy-desc").value  = "";
+    $("vacancy-title").value        = "";
+    $("vacancy-desc").value         = "";
+    $("vacancy-requirements").value = "";
   } else {
     // Создание новой
     const res = await fetch(`${API}/api/vacancies`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, description: desc }),
+      body: JSON.stringify({ title, description: desc, requirements }),
     });
     const v = await res.json();
 
@@ -238,8 +242,9 @@ async function saveVacancy() {
     $("vacancy-select").value = v.id;
 
     $("new-vacancy-form").classList.add("hidden");
-    $("vacancy-title").value = "";
-    $("vacancy-desc").value  = "";
+    $("vacancy-title").value        = "";
+    $("vacancy-desc").value         = "";
+    $("vacancy-requirements").value = "";
     onVacancyChange(v.id);
   }
 }
@@ -485,6 +490,10 @@ function bindEvents() {
   });
   $("btn-delete-vacancy").addEventListener("click", deleteVacancy);
   $("btn-parse-url").addEventListener("click",      parseVacancyUrl);
+  $("btn-regen-summary").addEventListener("click",  () => {
+    $("vacancy-requirements").value       = "";
+    $("vacancy-requirements").placeholder = "⏳ AI сформирует заново после сохранения...";
+  });
   $("btn-start").addEventListener("click",          startScreening);
   $("btn-stop").addEventListener("click",           stopScreening);
   $("btn-dashboard").addEventListener("click",      () => {

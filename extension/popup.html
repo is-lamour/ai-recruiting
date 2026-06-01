@@ -59,6 +59,11 @@
     </div>
     <input type="text" id="vacancy-title" placeholder="Название (напр. Оператор КЦ)" />
     <textarea id="vacancy-desc" rows="6" placeholder="Вставьте текст вакансии с требованиями и обязанностями..."></textarea>
+    <div class="summary-label-row">
+      <span class="summary-label">Summary для скрининга</span>
+      <button class="link-btn" id="btn-regen-summary" type="button">↺ Перегенерировать</button>
+    </div>
+    <textarea id="vacancy-requirements" rows="3" placeholder="Оставьте пустым — AI сформирует автоматически"></textarea>
     <div class="row">
       <button class="btn btn-primary" id="btn-save-vacancy">Сохранить</button>
       <button class="btn btn-ghost"   id="btn-cancel-vacancy">Отмена</button>

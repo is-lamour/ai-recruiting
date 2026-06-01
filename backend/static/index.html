@@ -71,7 +71,10 @@
       </div>
       <input  type="text" id="vf-title"  placeholder="Название (напр. Системный аналитик)" />
       <textarea id="vf-desc" rows="6" placeholder="Вставьте текст вакансии с требованиями..."></textarea>
-      <label class="vf-label">Summary (ключевые требования для скрининга)</label>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+        <label class="vf-label">Summary (ключевые требования для скрининга)</label>
+        <button class="btn btn-ghost btn-sm" id="btn-regen-summary" type="button">↺ Перегенерировать</button>
+      </div>
       <textarea id="vf-requirements" rows="3" placeholder="Оставьте пустым — AI сформирует автоматически (~5 сек в фоне)"></textarea>
       <div class="vf-note">Если заполните summary вручную — AI-генерация пропускается. Иначе summary появится через несколько секунд после сохранения.</div>
       <div class="row gap">

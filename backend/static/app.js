@@ -435,6 +435,10 @@ function setupListeners() {
   document.getElementById("btn-save-vacancy").addEventListener("click",   saveVacancy);
   document.getElementById("btn-cancel-vacancy").addEventListener("click", closeVacancyForm);
   document.getElementById("btn-load-url").addEventListener("click",       loadVacancyFromUrl);
+  document.getElementById("btn-regen-summary").addEventListener("click",  () => {
+    document.getElementById("vf-requirements").value = "";
+    document.getElementById("vf-requirements").placeholder = "⏳ AI сформирует заново после сохранения...";
+  });
 
   document.getElementById("btn-toggle-desc").addEventListener("click", () => {
     const wrap = document.getElementById("vp-desc-wrap");
