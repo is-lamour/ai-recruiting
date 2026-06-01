@@ -12,6 +12,7 @@ let currentVacancy = null;
 let allVacancies = [];
 let allCandidates = [];
 let activeFilter = "all";
+let activeSort = "score_desc";
 let editingVacancyId = null;
 let summaryPollTimer = null;
 
@@ -261,6 +262,14 @@ function renderCandidates() {
     filtered = allCandidates.filter(c => c.category === activeFilter);
   }
 
+  filtered = [...filtered].sort((a, b) => {
+    if (activeSort === "score_desc") return (b.score ?? 0) - (a.score ?? 0);
+    if (activeSort === "score_asc")  return (a.score ?? 0) - (b.score ?? 0);
+    if (activeSort === "time_desc")  return new Date(b.created_at) - new Date(a.created_at);
+    if (activeSort === "time_asc")   return new Date(a.created_at) - new Date(b.created_at);
+    return 0;
+  });
+
   if (filtered.length === 0) {
     list.innerHTML = "";
     empty.classList.remove("hidden");
@@ -308,6 +317,7 @@ function buildCard(c) {
         </span>
         <span class="category-badge ${cat}">${catLabel(cat)}</span>
         ${statusLabel ? `<span class="status-badge">${escHtml(statusLabel)}</span>` : ""}
+        ${c.created_at ? `<span class="screened-at">🕐 ${formatDateTime(c.created_at)}</span>` : ""}
       </div>
       ${c.summary ? `<p class="resume-summary">${escHtml(c.summary)}</p>` : ""}
       <p class="ai-comment">${escHtml(c.ai_comment || "")}</p>
@@ -442,6 +452,11 @@ function setupListeners() {
     });
   });
 
+  document.getElementById("sort-select").addEventListener("change", e => {
+    activeSort = e.target.value;
+    renderCandidates();
+  });
+
   document.getElementById("btn-bulk-huntflow").addEventListener("click", bulkMarkForHuntflow);
   document.getElementById("btn-bulk-reject").addEventListener("click",   bulkMarkForReject);
   document.getElementById("btn-export").addEventListener("click",        exportToExcel);
@@ -499,4 +514,11 @@ function escHtml(str) {
 
 function catLabel(cat) {
   return { suitable: "Подходит", consider: "Подумать", reject: "Отказ", pending: "Ожидание" }[cat] || cat;
+}
+
+function formatDateTime(str) {
+  if (!str) return "";
+  const d = new Date(str.includes("T") || str.includes("Z") ? str : str + "Z");
+  if (isNaN(d)) return str;
+  return d.toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }

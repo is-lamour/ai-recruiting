@@ -120,6 +120,12 @@
           <button class="filter-btn" data-filter="consider">Подумать</button>
           <button class="filter-btn" data-filter="reject">Отказ</button>
         </div>
+        <select id="sort-select" class="sort-select">
+          <option value="score_desc">По баллу ↓</option>
+          <option value="score_asc">По баллу ↑</option>
+          <option value="time_desc">Сначала новые</option>
+          <option value="time_asc">Сначала старые</option>
+        </select>
         <div class="bulk-actions">
           <button id="btn-bulk-huntflow" class="btn btn-success">
             → В Huntflow (все «Подходят»)
@@ -151,6 +157,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=6"></script>
+  <script src="/static/app.js?v=7"></script>
 </body>
 </html>

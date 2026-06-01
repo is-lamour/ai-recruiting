@@ -287,6 +287,18 @@ main { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
 
 .bulk-actions { display: flex; gap: 8px; }
 
+.sort-select {
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+  background: #fff;
+  color: var(--text);
+  cursor: pointer;
+  outline: none;
+}
+.sort-select:focus { border-color: #3b82f6; }
+
 .btn {
   padding: 8px 14px;
   border: none;
@@ -378,6 +390,13 @@ main { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
   font-size: 11px;
   background: #e0f2fe;
   color: #0369a1;
+}
+
+.screened-at {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: auto;
+  white-space: nowrap;
 }
 
 .resume-summary {
