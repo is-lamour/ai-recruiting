@@ -394,17 +394,58 @@ async function loadPendingActions() {
 
     $("actions-section").classList.toggle("hidden", !hasActions);
 
-    $("btn-do-rejections").classList.toggle("hidden", rejectCount === 0);
-    $("reject-count").textContent = rejectCount;
+    // Рендерим список с чекбоксами
+    const rejectSection = $("reject-section");
+    rejectSection.classList.toggle("hidden", rejectCount === 0);
+    if (rejectCount > 0) {
+      const list = $("reject-list");
+      list.innerHTML = "";
+      pendingActions.to_reject.forEach(c => {
+        const label = document.createElement("label");
+        label.className = "reject-item";
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.checked = true;
+        cb.dataset.id = c.id;
+        cb.dataset.hhUrl = c.hh_url;
+        const span = document.createElement("span");
+        span.textContent = c.name || c.hh_url;
+        label.appendChild(cb);
+        label.appendChild(span);
+        list.appendChild(label);
+      });
+      $("reject-check-all").checked = true;
+      $("reject-check-all").indeterminate = false;
+      updateRejectCount();
+    }
 
     $("btn-do-huntflow").classList.toggle("hidden", huntflowCount === 0);
     $("huntflow-count").textContent = huntflowCount;
   } catch { /* ignore */ }
 }
 
+function updateRejectCount() {
+  const all     = [...document.querySelectorAll("#reject-list .reject-item input")];
+  const checked = all.filter(cb => cb.checked);
+  $("reject-count").textContent = checked.length;
+  $("btn-do-rejections").disabled = checked.length === 0;
+  const allCb = $("reject-check-all");
+  if (checked.length === 0) {
+    allCb.checked = false;
+    allCb.indeterminate = false;
+  } else if (checked.length === all.length) {
+    allCb.checked = true;
+    allCb.indeterminate = false;
+  } else {
+    allCb.checked = false;
+    allCb.indeterminate = true;
+  }
+}
+
 async function executeRejections() {
   if (!activeTabId) { alert("Откройте страницу откликов hh.kz"); return; }
-  const candidates = pendingActions.to_reject || [];
+  const checked = [...document.querySelectorAll("#reject-list .reject-item input:checked")];
+  const candidates = checked.map(cb => ({ id: parseInt(cb.dataset.id), hh_url: cb.dataset.hhUrl }));
   if (!candidates.length) return;
 
   $("btn-do-rejections").disabled = true;
@@ -504,6 +545,13 @@ function bindEvents() {
     chrome.tabs.create({ url: `${API}/?vacancy=${selectedVacancyId || ""}` });
   });
   $("btn-do-rejections").addEventListener("click",  executeRejections);
+  $("reject-check-all").addEventListener("change", e => {
+    document.querySelectorAll("#reject-list .reject-item input").forEach(cb => {
+      cb.checked = e.target.checked;
+    });
+    updateRejectCount();
+  });
+  $("reject-list").addEventListener("change", () => updateRejectCount());
   $("btn-do-huntflow").addEventListener("click",    openHuntflowTabs);
   $("btn-diagnose").addEventListener("click",       runDiagnose);
 }

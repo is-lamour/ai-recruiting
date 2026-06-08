@@ -299,68 +299,113 @@ function extractResumeData(doc) {
 // ── Отказы на HH ─────────────────────────────────────────────────────────────
 
 async function executeRejections(candidates, sendResponse) {
-  let rejected = 0;
-
+  // Фаза 1: отмечаем чекбоксы на карточках
+  const selected = [];
   for (const candidate of candidates) {
-    try {
-      const ok = await rejectCandidateOnPage(candidate.hh_url);
-      if (ok) {
+    const ok = await tickCandidateCheckbox(candidate.hh_url);
+    if (ok) selected.push(candidate);
+    await sleep(150);
+  }
+
+  if (!selected.length) {
+    sendResponse({ rejected: 0, total: candidates.length });
+    return;
+  }
+
+  // Фаза 2: общая кнопка "Отказать" → "Не подходит"
+  const bulkOk = await clickBulkDiscard();
+
+  let rejected = 0;
+  if (bulkOk) {
+    for (const c of selected) {
+      try {
+        await bgPatch(`/api/candidates/${c.id}`, { status: "rejected" });
         rejected++;
-        await bgPatch(`/api/candidates/${candidate.id}`, { status: "rejected" });
+      } catch (e) {
+        console.warn("[HH Reject] patch error:", e.message);
       }
-    } catch (e) {
-      console.warn("[HH Screen] Ошибка отказа:", e.message);
     }
-    await sleep(900);
   }
 
   sendResponse({ rejected, total: candidates.length });
 }
 
-async function rejectCandidateOnPage(resumeUrl) {
+async function tickCandidateCheckbox(resumeUrl) {
   const resumeId = resumeUrl.split("/resume/")[1]?.split("?")[0]?.split("/")[0];
   if (!resumeId) return false;
 
-  // Ищем ссылку с нужным resumeId
   const link = document.querySelector(`a[href*="${resumeId}"]`);
-  if (!link) { console.log(`[HH Reject] ❌ Ссылка не найдена: ${resumeId}`); return false; }
+  if (!link) { console.log(`[HH Reject] ссылка не найдена: ${resumeId}`); return false; }
 
-  // Поднимаемся вверх по DOM — ищем ближайшего предка с кнопкой "Отказать",
-  // но останавливаемся до outer-контейнера (у него есть responses-auto-sort)
-  let discardBtn = null;
+  // Поднимаемся вверх до карточки с чекбоксом
   let el = link.parentElement;
   while (el && el !== document.body) {
-    const btn = el.querySelector('[data-qa="employee-discard-on-topic"]');
-    if (btn && !el.querySelector('[data-qa="responses-auto-sort"]')) {
-      discardBtn = btn;
-      break;
+    if (el.querySelector('[data-qa="responses-auto-sort"]')) break;
+    const cb = el.querySelector('input[type="checkbox"]');
+    if (cb) {
+      if (!cb.checked) cb.click();
+      console.log(`[HH Reject] checkbox отмечен: ${resumeId}`);
+      return true;
     }
     el = el.parentElement;
   }
+  console.log(`[HH Reject] checkbox не найден: ${resumeId}`);
+  return false;
+}
 
-  console.log(`[HH Reject] discardBtn найден: ${!!discardBtn}`);
-  if (!discardBtn) return false;
+async function clickBulkDiscard() {
+  // Ждём появления тулбара массовых действий (до 3 сек)
+  let bulkBtn = null;
+  for (let i = 0; i < 10 && !bulkBtn; i++) {
+    await sleep(300);
+    bulkBtn =
+      document.querySelector('[data-qa*="bulk"][data-qa*="discard"]') ||
+      document.querySelector('[data-qa*="discard"][data-qa*="bulk"]') ||
+      document.querySelector('[data-qa*="bulk-action"][data-qa*="discard"]') ||
+      // Кнопка "Отказать" вне карточек (в тулбаре выделения)
+      Array.from(document.querySelectorAll('[role="button"], button'))
+        .find(e => /^отказать$/i.test(e.textContent?.trim()) &&
+                   !e.closest('[data-qa*="resume-serp__item"]') &&
+                   !e.closest('[data-qa*="vacancy-response-item"]'));
+  }
 
-  discardBtn.click();
+  console.log(`[HH Reject] bulk кнопка найдена: ${!!bulkBtn} / qa=${bulkBtn?.dataset?.qa}`);
+  if (!bulkBtn) return false;
 
-  // Поллим появление дропдауна (до 2 сек)
+  bulkBtn.click();
+
+  // Ждём дропдаун "Не подходит"
   let notSuitable = null;
   for (let i = 0; i < 8 && !notSuitable; i++) {
     await sleep(250);
     notSuitable =
-      // 1. По data-qa (самый надёжный — HH magritte UI)
       document.querySelector('[data-qa*="discard_by_employer_one-click"]') ||
       document.querySelector('[data-qa*="discard_by_employer"]') ||
-      // 2. Текст с &nbsp; (\u00A0) — "Не подходит"
       Array.from(document.querySelectorAll("[role='button'], button, li, [role='menuitem'], [role='option']"))
-        .find(e => /не[\s\u00A0]+подходит/i.test(e.textContent));
+        .find(e => /не[\s ]+подходит/i.test(e.textContent));
   }
 
-  console.log(`[HH Reject] Найдено: ${notSuitable?.dataset?.qa} / "${notSuitable?.textContent?.trim().slice(0, 30)}"`);
+  console.log(`[HH Reject] "Не подходит" найдено: ${!!notSuitable} / "${notSuitable?.textContent?.trim().slice(0, 30)}"`);
 
   if (notSuitable) {
     notSuitable.click();
-    await sleep(600);
+
+    // Иногда появляется дополнительное подтверждение "Изменить статус"
+    let confirmBtn = null;
+    for (let i = 0; i < 6 && !confirmBtn; i++) {
+      await sleep(250);
+      confirmBtn =
+        document.querySelector('[data-qa*="status-change-confirm"]') ||
+        document.querySelector('[data-qa*="confirm"]') ||
+        Array.from(document.querySelectorAll('[role="button"], button'))
+          .find(e => /изменить[\s ]+статус/i.test(e.textContent?.trim()));
+    }
+    if (confirmBtn) {
+      console.log(`[HH Reject] "Изменить статус" найдено, кликаем`);
+      confirmBtn.click();
+      await sleep(400);
+    }
+
     return true;
   }
 
@@ -373,5 +418,3 @@ async function rejectCandidateOnPage(resumeUrl) {
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
-
-

@@ -89,7 +89,18 @@
   <!-- Ожидающие действия -->
   <div id="actions-section" class="section hidden">
     <p class="section-title">Ожидают выполнения на HH</p>
-    <button class="btn btn-danger  hidden" id="btn-do-rejections">✕ Выполнить отказы (<span id="reject-count">0</span>)</button>
+    <div id="reject-section" class="hidden">
+      <div class="reject-header">
+        <label class="reject-all-label">
+          <input type="checkbox" id="reject-check-all" checked />
+          <span>Выбрать всех</span>
+        </label>
+      </div>
+      <div id="reject-list" class="reject-list"></div>
+      <button class="btn btn-danger" id="btn-do-rejections">
+        ✕ Выполнить отказы (<span id="reject-count">0</span>)
+      </button>
+    </div>
     <button class="btn btn-success hidden" id="btn-do-huntflow">→ Открыть в Huntflow (<span id="huntflow-count">0</span>)</button>
   </div>
 

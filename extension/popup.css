@@ -184,3 +184,42 @@ textarea { min-height: 90px; }
 }
 
 .hidden { display: none !important; }
+
+/* Reject candidate list */
+.reject-header {
+  display: flex;
+  align-items: center;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #f1f5f9;
+}
+.reject-all-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  user-select: none;
+}
+.reject-list {
+  max-height: 130px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 0;
+}
+.reject-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #1e293b;
+  cursor: pointer;
+  user-select: none;
+}
+.reject-item input[type="checkbox"] { cursor: pointer; flex-shrink: 0; }
+.reject-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
