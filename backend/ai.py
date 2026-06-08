@@ -50,6 +50,24 @@ def summarize_vacancy(description: str, api_key: str | None = None) -> str:
     return response.text.strip()[:700]
 
 
+def _safe_score(value) -> int:
+    """Парсит score из ответа LLM: int, float, '75/100', '75%', None → int 0-100."""
+    if value is None:
+        return 0
+    try:
+        if isinstance(value, (int, float)):
+            return max(0, min(100, int(value)))
+        s = str(value).strip()
+        # "75/100" → берём числитель
+        if "/" in s:
+            s = s.split("/")[0].strip()
+        # "75%" → убираем %
+        s = s.rstrip("%").strip()
+        return max(0, min(100, int(float(s))))
+    except (ValueError, TypeError):
+        return 0
+
+
 def screen_resume(requirements: str, resume_text: str, api_key: str | None = None) -> dict:
     key = _resolve_key(api_key)
     _, model_fast = _make_models(key)
@@ -83,7 +101,7 @@ def screen_resume(requirements: str, resume_text: str, api_key: str | None = Non
             "summary": "",
         }
 
-    result["score"] = max(0, min(100, int(result.get("score", 0))))
+    result["score"] = _safe_score(result.get("score"))
     cat = result.get("category", "")
     if cat not in ("reject", "consider", "suitable"):
         s = result["score"]
@@ -92,5 +110,7 @@ def screen_resume(requirements: str, resume_text: str, api_key: str | None = Non
         result["questions"] = []
     if not isinstance(result.get("summary"), str):
         result["summary"] = ""
+    if not isinstance(result.get("comment"), str) or not result["comment"].strip():
+        result["comment"] = "Комментарий недоступен. Проверьте резюме вручную."
 
     return result

@@ -374,34 +374,4 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// ── Авто-отказы (опрос API каждые 30 сек) ────────────────────────────────────
-
-function getSelectedVacancy() {
-  return new Promise(r =>
-    chrome.runtime.sendMessage({ action: "get_selected_vacancy" }, res => {
-      if (chrome.runtime.lastError) r(null);
-      else r(res?.vacancyId || null);
-    })
-  );
-}
-
-let autoRejectRunning = false;
-
-async function runAutoReject() {
-  if (screeningActive || autoRejectRunning) return;
-  const vacancyId = await getSelectedVacancy();
-  if (!vacancyId) return;
-
-  try {
-    const pending = await bgGet(`/api/vacancies/${vacancyId}/pending-actions`);
-    if (!pending.to_reject?.length) return;
-
-    autoRejectRunning = true;
-    console.log(`[HH Screen] Авто-отказ: ${pending.to_reject.length} кандидатов`);
-    await executeRejections(pending.to_reject, () => {});
-  } catch { /* backend недоступен */ }
-  finally {
-    autoRejectRunning = false;
-  }
-}
 

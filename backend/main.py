@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from typing import Optional
 import json
 import io
+import sqlite3
 import requests as http_requests
 from pathlib import Path
 from bs4 import BeautifulSoup
@@ -74,13 +75,13 @@ def _get_gemini_key(request: Request) -> Optional[str]:
 
 
 def _generate_summary_bg(vacancy_id: int, description: str, api_key: Optional[str] = None):
-    """Генерирует summary вакансии в фоне и сохраняет в БД."""
+    """Генерирует summary вакансии в фоне и сохраняет в БД только если requirements пусто."""
     try:
         requirements = summarize_vacancy(description, api_key=api_key)
         conn = get_db()
         try:
             conn.execute(
-                "UPDATE vacancies SET requirements = ? WHERE id = ?",
+                "UPDATE vacancies SET requirements = ? WHERE id = ? AND (requirements IS NULL OR requirements = '')",
                 (requirements, vacancy_id),
             )
             conn.commit()
@@ -224,15 +225,6 @@ def parse_hh_vacancy(url: str):
 def screen_candidate(request: Request, data: CandidateScreen):
     conn = get_db()
     try:
-        existing = conn.execute(
-            "SELECT * FROM candidates WHERE hh_url = ? AND vacancy_id = ?",
-            (data.hh_url, data.vacancy_id),
-        ).fetchone()
-        if existing:
-            d = row_to_dict(existing)
-            d["questions"] = json.loads(d["questions"] or "[]")
-            return d
-
         vacancy = conn.execute(
             "SELECT * FROM vacancies WHERE id = ?", (data.vacancy_id,)
         ).fetchone()
@@ -242,27 +234,34 @@ def screen_candidate(request: Request, data: CandidateScreen):
         requirements = vacancy["requirements"] or vacancy["description"][:500]
         result = screen_resume(requirements, data.resume_text, api_key=_get_gemini_key(request))
 
-        cur = conn.execute(
-            """INSERT INTO candidates
-               (vacancy_id, name, hh_url, resume_text, score, category, ai_comment, questions, summary)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                data.vacancy_id,
-                data.name,
-                data.hh_url,
-                data.resume_text,
-                result["score"],
-                result["category"],
-                result["comment"],
-                json.dumps(result["questions"], ensure_ascii=False),
-                result.get("summary", ""),
-            ),
-        )
-        conn.commit()
+        try:
+            cur = conn.execute(
+                """INSERT INTO candidates
+                   (vacancy_id, name, hh_url, resume_text, score, category, ai_comment, questions, summary)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    data.vacancy_id,
+                    data.name,
+                    data.hh_url,
+                    data.resume_text,
+                    result["score"],
+                    result["category"],
+                    result["comment"],
+                    json.dumps(result["questions"], ensure_ascii=False),
+                    result.get("summary", ""),
+                ),
+            )
+            conn.commit()
+            row = conn.execute(
+                "SELECT * FROM candidates WHERE id = ?", (cur.lastrowid,)
+            ).fetchone()
+        except sqlite3.IntegrityError:
+            # Параллельный запрос уже вставил эту пару (vacancy_id, hh_url) — возвращаем существующую
+            row = conn.execute(
+                "SELECT * FROM candidates WHERE hh_url = ? AND vacancy_id = ?",
+                (data.hh_url, data.vacancy_id),
+            ).fetchone()
 
-        row = conn.execute(
-            "SELECT * FROM candidates WHERE id = ?", (cur.lastrowid,)
-        ).fetchone()
         d = row_to_dict(row)
         d["questions"] = json.loads(d["questions"] or "[]")
         return d
