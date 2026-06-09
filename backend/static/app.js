@@ -15,6 +15,10 @@ let activeFilter = "all";
 let activeSort = "score_desc";
 let editingVacancyId = null;
 let summaryPollTimer = null;
+let scoreMin = 0;
+let scoreMax = 100;
+let selectedIds = new Set();
+let viewMode = "main"; // "main" | "trash"
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
@@ -51,6 +55,13 @@ async function loadVacancies() {
 async function selectVacancy(id) {
   currentVacancyId = id;
   currentVacancy = allVacancies.find(v => v.id === id) || null;
+  viewMode = "main";
+  selectedIds.clear();
+
+  // Сбросить активный фильтр на "Все"
+  document.querySelectorAll(".filter-btn").forEach(b => b.classList.remove("active"));
+  document.querySelector(".filter-btn[data-filter='all']").classList.add("active");
+  activeFilter = "all";
 
   if (!currentVacancy) {
     try {
@@ -243,11 +254,18 @@ async function loadStats() {
   document.getElementById("stat-suitable").textContent = stats.suitable;
   document.getElementById("stat-consider").textContent = stats.consider;
   document.getElementById("stat-reject").textContent   = stats.reject;
+  const trashCount = stats.trashed ?? 0;
+  const trashEl = document.getElementById("stat-trash");
+  trashEl.textContent = trashCount > 0 ? `(${trashCount})` : "";
+  trashEl.classList.toggle("hidden", trashCount === 0);
 }
 
 async function loadCandidates() {
-  const res = await fetch(`${API}/api/vacancies/${currentVacancyId}/candidates`);
+  const trashed = viewMode === "trash";
+  const res = await fetch(`${API}/api/vacancies/${currentVacancyId}/candidates?trashed=${trashed}`);
   allCandidates = await res.json();
+  selectedIds.clear();
+  updateBulkPanel();
   renderCandidates();
 }
 
@@ -258,8 +276,11 @@ function renderCandidates() {
   const empty = document.getElementById("empty-filter-state");
 
   let filtered = allCandidates;
-  if (activeFilter !== "all") {
+  if (viewMode === "main" && activeFilter !== "all") {
     filtered = allCandidates.filter(c => c.category === activeFilter);
+  }
+  if (viewMode === "main") {
+    filtered = filtered.filter(c => (c.score ?? 0) >= scoreMin && (c.score ?? 0) <= scoreMax);
   }
 
   filtered = [...filtered].sort((a, b) => {
@@ -290,6 +311,22 @@ function renderCandidates() {
   list.querySelectorAll(".action-btn.delete-candidate").forEach(btn => {
     btn.addEventListener("click", () => deleteCandidate(+btn.dataset.id));
   });
+  list.querySelectorAll(".action-btn.restore-candidate").forEach(btn => {
+    btn.addEventListener("click", () => restoreCandidate(+btn.dataset.id));
+  });
+  list.querySelectorAll(".action-btn.delete-permanent").forEach(btn => {
+    btn.addEventListener("click", () => deletePermanent(+btn.dataset.id));
+  });
+  list.querySelectorAll(".candidate-cb").forEach(cb => {
+    cb.addEventListener("change", () => {
+      const id = +cb.dataset.id;
+      if (cb.checked) selectedIds.add(id);
+      else selectedIds.delete(id);
+      const card = cb.closest(".candidate-card");
+      if (card) card.classList.toggle("selected", cb.checked);
+      updateBulkPanel();
+    });
+  });
   list.querySelectorAll(".questions-toggle").forEach(btn => {
     btn.addEventListener("click", () => {
       const qList = document.getElementById(`q-${btn.dataset.id}`);
@@ -306,10 +343,14 @@ function buildCard(c) {
     new: "", to_reject: "Помечен на отказ", to_huntflow: "Помечен в Huntflow",
     rejected: "Отказ отправлен", huntflow_sent: "Отправлен в Huntflow"
   }[c.status] || "";
+  const checked = selectedIds.has(c.id) ? "checked" : "";
 
   return `
-  <div class="candidate-card status-${c.status}" data-id="${c.id}">
-    <div class="score-badge ${cat}">${c.score ?? "—"}</div>
+  <div class="candidate-card status-${c.status}${selectedIds.has(c.id) ? " selected" : ""}" data-id="${c.id}">
+    <div class="card-select">
+      <input type="checkbox" class="candidate-cb" data-id="${c.id}" ${checked} />
+      <div class="score-badge ${cat}">${c.score ?? "—"}</div>
+    </div>
     <div class="card-body">
       <div class="card-header">
         <span class="candidate-name">
@@ -333,7 +374,13 @@ function buildCard(c) {
 }
 
 function buildActionButtons(c) {
-  const deleteBtn = `<button class="action-btn delete-candidate" data-id="${c.id}">🗑 Удалить</button>`;
+  if (viewMode === "trash") {
+    return `
+      <button class="action-btn restore-candidate" data-id="${c.id}">↩ Восстановить</button>
+      <button class="action-btn delete-permanent" data-id="${c.id}">🗑 Удалить навсегда</button>
+    `;
+  }
+  const deleteBtn = `<button class="action-btn delete-candidate" data-id="${c.id}">🗑 В корзину</button>`;
   if (c.status === "rejected")      return `<span style="font-size:12px;color:var(--text-muted)">Отказ отправлен</span>${deleteBtn}`;
   if (c.status === "huntflow_sent") return `<span style="font-size:12px;color:var(--text-muted)">В Huntflow ✓</span>${deleteBtn}`;
   if (c.status === "to_huntflow")   return `<button class="action-btn undo" data-id="${c.id}">✕ Отменить</button>${deleteBtn}`;
@@ -360,13 +407,55 @@ async function setStatus(id, status) {
 }
 
 async function deleteCandidate(id) {
-  const candidate = allCandidates.find(c => c.id === id);
-  const name = candidate?.name || "кандидата";
-  if (!confirm(`Удалить ${name}?`)) return;
   await fetch(`${API}/api/candidates/${id}`, { method: "DELETE" });
   allCandidates = allCandidates.filter(c => c.id !== id);
+  selectedIds.delete(id);
+  updateBulkPanel();
   renderCandidates();
   await loadStats();
+}
+
+async function restoreCandidate(id) {
+  await fetch(`${API}/api/candidates/${id}/restore`, { method: "POST" });
+  allCandidates = allCandidates.filter(c => c.id !== id);
+  selectedIds.delete(id);
+  updateBulkPanel();
+  renderCandidates();
+  await loadStats();
+}
+
+async function deletePermanent(id) {
+  if (!confirm("Удалить кандидата навсегда? Это действие нельзя отменить.")) return;
+  await fetch(`${API}/api/candidates/${id}/permanent`, { method: "DELETE" });
+  allCandidates = allCandidates.filter(c => c.id !== id);
+  selectedIds.delete(id);
+  updateBulkPanel();
+  renderCandidates();
+}
+
+async function bulkActionSelected(action) {
+  const ids = [...selectedIds];
+  if (!ids.length) return;
+  await fetch(`${API}/api/candidates/bulk`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids, action }),
+  });
+  await loadCandidates();
+  if (action !== "delete") await loadStats();
+}
+
+function updateBulkPanel() {
+  const panel = document.getElementById("bulk-panel");
+  const count = document.getElementById("bulk-count");
+  const n = selectedIds.size;
+  panel.classList.toggle("hidden", n === 0);
+  count.textContent = `Выбрано: ${n}`;
+
+  const inTrash = viewMode === "trash";
+  document.getElementById("btn-bulk-to-reject").classList.toggle("hidden", inTrash);
+  document.getElementById("btn-bulk-trash").classList.toggle("hidden", inTrash);
+  document.getElementById("btn-empty-trash").classList.toggle("hidden", !inTrash);
 }
 
 async function exportToExcel() {
@@ -400,6 +489,21 @@ async function bulkMarkForHuntflow() {
   if (count === 0) { alert("Нет новых кандидатов категории «Подходят»"); return; }
   if (!confirm(`Пометить ${count} кандидата(ов) для добавления в Huntflow?`)) return;
   await fetch(`${API}/api/vacancies/${currentVacancyId}/mark-for-huntflow`, { method: "POST" });
+  await refreshData();
+}
+
+async function bulkTrashAllReject() {
+  if (!currentVacancyId) return;
+  const ids = allCandidates
+    .filter(c => c.category === "reject" && c.status === "new")
+    .map(c => c.id);
+  if (ids.length === 0) { alert("Нет новых кандидатов категории «Отказ»"); return; }
+  if (!confirm(`Отправить ${ids.length} кандидата(ов) категории «Отказ» в корзину?`)) return;
+  await fetch(`${API}/api/candidates/bulk`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids, action: "delete" }),
+  });
   await refreshData();
 }
 
@@ -448,12 +552,32 @@ function setupListeners() {
   });
 
   document.querySelectorAll(".filter-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", async () => {
       document.querySelectorAll(".filter-btn").forEach(b => b.classList.remove("active"));
       btn.classList.add("active");
-      activeFilter = btn.dataset.filter;
-      renderCandidates();
+      const filter = btn.dataset.filter;
+      if (filter === "trash") {
+        viewMode = "trash";
+        activeFilter = "all";
+        await loadCandidates();
+      } else {
+        if (viewMode === "trash") {
+          viewMode = "main";
+          await loadCandidates();
+        }
+        activeFilter = filter;
+        renderCandidates();
+      }
     });
+  });
+
+  document.getElementById("score-min").addEventListener("input", e => {
+    scoreMin = parseInt(e.target.value) || 0;
+    renderCandidates();
+  });
+  document.getElementById("score-max").addEventListener("input", e => {
+    scoreMax = parseInt(e.target.value) ?? 100;
+    renderCandidates();
   });
 
   document.getElementById("sort-select").addEventListener("change", e => {
@@ -464,6 +588,38 @@ function setupListeners() {
   document.getElementById("btn-bulk-huntflow").addEventListener("click", bulkMarkForHuntflow);
   document.getElementById("btn-bulk-reject").addEventListener("click",   bulkMarkForReject);
   document.getElementById("btn-export").addEventListener("click",        exportToExcel);
+  document.getElementById("btn-refresh").addEventListener("click", async () => {
+    const btn = document.getElementById("btn-refresh");
+    btn.textContent = "↻ Загрузка...";
+    btn.disabled = true;
+    try { await refreshData(); } finally {
+      btn.textContent = "↻ Обновить";
+      btn.disabled = false;
+    }
+  });
+
+  document.getElementById("btn-select-all").addEventListener("click", () => {
+    const list = document.getElementById("candidates-list");
+    list.querySelectorAll(".candidate-cb").forEach(cb => {
+      cb.checked = true;
+      selectedIds.add(+cb.dataset.id);
+      cb.closest(".candidate-card")?.classList.add("selected");
+    });
+    updateBulkPanel();
+  });
+  document.getElementById("btn-bulk-to-reject").addEventListener("click", () => bulkActionSelected("to_reject"));
+  document.getElementById("btn-bulk-trash").addEventListener("click",     () => bulkActionSelected("delete"));
+  document.getElementById("btn-bulk-trash-all").addEventListener("click", bulkTrashAllReject);
+  document.getElementById("btn-bulk-deselect").addEventListener("click",  () => {
+    selectedIds.clear();
+    updateBulkPanel();
+    renderCandidates();
+  });
+  document.getElementById("btn-empty-trash").addEventListener("click", async () => {
+    if (!confirm("Навсегда удалить всех кандидатов из корзины?")) return;
+    await fetch(`${API}/api/vacancies/${currentVacancyId}/trash`, { method: "DELETE" });
+    await loadCandidates();
+  });
 
   document.getElementById("modal-close").addEventListener("click", () => {
     document.getElementById("modal-overlay").classList.add("hidden");

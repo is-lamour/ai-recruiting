@@ -496,6 +496,73 @@ main { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
   color: var(--text-muted);
 }
 
+/* ── Score filter ────────────────────────────────────────────────────────── */
+.score-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.score-filter input {
+  width: 54px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  text-align: center;
+  outline: none;
+}
+.score-filter input:focus { border-color: #3b82f6; }
+
+/* ── Bulk select panel ───────────────────────────────────────────────────── */
+.bulk-panel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #1e293b;
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.bulk-panel span { font-size: 13px; font-weight: 600; flex: 1; }
+.bulk-panel .btn { flex: 0; }
+
+/* ── Candidate card select ───────────────────────────────────────────────── */
+.card-select {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.candidate-cb {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  flex-shrink: 0;
+  accent-color: #3b82f6;
+}
+.candidate-card { grid-template-columns: 56px 1fr auto; }
+.candidate-card.selected {
+  border-color: #3b82f6;
+  background: #eff6ff;
+}
+
+
+/* ── Trash view ──────────────────────────────────────────────────────────── */
+.candidate-card .action-btn.restore-candidate {
+  background: var(--suitable-bg);
+  color: var(--suitable);
+  border-color: var(--suitable);
+}
+.candidate-card .action-btn.delete-permanent {
+  background: var(--reject-bg);
+  color: var(--reject);
+  border-color: var(--reject);
+}
+
 /* ── Utility ─────────────────────────────────────────────────────────────── */
 .hidden { display: none !important; }
 

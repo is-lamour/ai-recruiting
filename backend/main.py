@@ -68,6 +68,11 @@ class StatusUpdate(BaseModel):
     status: str  # new | to_reject | to_huntflow | rejected | huntflow_sent
 
 
+class BulkAction(BaseModel):
+    ids: list
+    action: str  # "to_reject" | "delete"
+
+
 # ── Background tasks ──────────────────────────────────────────────────────────
 
 def _get_gemini_key(request: Request) -> Optional[str]:
@@ -237,8 +242,8 @@ def screen_candidate(request: Request, data: CandidateScreen):
         try:
             cur = conn.execute(
                 """INSERT INTO candidates
-                   (vacancy_id, name, hh_url, resume_text, score, category, ai_comment, questions, summary)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (vacancy_id, name, hh_url, resume_text, score, category, ai_comment, questions, summary, is_trashed)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)""",
                 (
                     data.vacancy_id,
                     data.name,
@@ -272,11 +277,11 @@ def screen_candidate(request: Request, data: CandidateScreen):
 # ── Candidates ────────────────────────────────────────────────────────────────
 
 @app.get("/api/vacancies/{vacancy_id}/candidates")
-def list_candidates(vacancy_id: int, category: Optional[str] = None):
+def list_candidates(vacancy_id: int, category: Optional[str] = None, trashed: bool = False):
     conn = get_db()
     try:
-        query = "SELECT * FROM candidates WHERE vacancy_id = ?"
-        params: list = [vacancy_id]
+        query = "SELECT * FROM candidates WHERE vacancy_id = ? AND COALESCE(is_trashed, 0) = ?"
+        params: list = [vacancy_id, 1 if trashed else 0]
         if category:
             query += " AND category = ?"
             params.append(category)
@@ -317,9 +322,68 @@ def update_status(candidate_id: int, data: StatusUpdate):
 def delete_candidate(candidate_id: int):
     conn = get_db()
     try:
+        conn.execute("UPDATE candidates SET is_trashed = 1 WHERE id = ?", (candidate_id,))
+        conn.commit()
+        return {"status": "trashed"}
+    finally:
+        conn.close()
+
+
+@app.post("/api/candidates/{candidate_id}/restore")
+def restore_candidate(candidate_id: int):
+    conn = get_db()
+    try:
+        conn.execute("UPDATE candidates SET is_trashed = 0 WHERE id = ?", (candidate_id,))
+        conn.commit()
+        return {"status": "restored"}
+    finally:
+        conn.close()
+
+
+@app.delete("/api/candidates/{candidate_id}/permanent")
+def delete_candidate_permanent(candidate_id: int):
+    conn = get_db()
+    try:
         conn.execute("DELETE FROM candidates WHERE id = ?", (candidate_id,))
         conn.commit()
         return {"status": "deleted"}
+    finally:
+        conn.close()
+
+
+@app.post("/api/candidates/bulk")
+def bulk_action(data: BulkAction):
+    if not data.ids:
+        return {"affected": 0}
+    conn = get_db()
+    try:
+        placeholders = ",".join("?" * len(data.ids))
+        if data.action == "delete":
+            conn.execute(
+                f"UPDATE candidates SET is_trashed = 1 WHERE id IN ({placeholders})",
+                data.ids,
+            )
+        elif data.action == "to_reject":
+            conn.execute(
+                f"UPDATE candidates SET status = 'to_reject' WHERE id IN ({placeholders})",
+                data.ids,
+            )
+        conn.commit()
+        return {"affected": len(data.ids)}
+    finally:
+        conn.close()
+
+
+@app.delete("/api/vacancies/{vacancy_id}/trash")
+def empty_trash(vacancy_id: int):
+    conn = get_db()
+    try:
+        conn.execute(
+            "DELETE FROM candidates WHERE vacancy_id = ? AND is_trashed = 1",
+            (vacancy_id,),
+        )
+        conn.commit()
+        return {"status": "emptied"}
     finally:
         conn.close()
 
@@ -478,7 +542,7 @@ def get_stats(vacancy_id: int):
     conn = get_db()
     try:
         rows = conn.execute(
-            "SELECT category, COUNT(*) as cnt FROM candidates WHERE vacancy_id = ? GROUP BY category",
+            "SELECT category, COUNT(*) as cnt FROM candidates WHERE vacancy_id = ? AND COALESCE(is_trashed, 0) = 0 GROUP BY category",
             (vacancy_id,),
         ).fetchall()
         by_cat = {"suitable": 0, "consider": 0, "reject": 0, "pending": 0}
@@ -486,7 +550,11 @@ def get_stats(vacancy_id: int):
         for row in rows:
             by_cat[row["category"]] = row["cnt"]
             total += row["cnt"]
-        return {"total": total, **by_cat}
+        trashed = conn.execute(
+            "SELECT COUNT(*) as cnt FROM candidates WHERE vacancy_id = ? AND COALESCE(is_trashed, 0) = 1",
+            (vacancy_id,),
+        ).fetchone()["cnt"]
+        return {"total": total, **by_cat, "trashed": trashed}
     finally:
         conn.close()
 

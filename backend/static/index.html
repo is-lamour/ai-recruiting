@@ -122,6 +122,13 @@
           <button class="filter-btn" data-filter="suitable">Подходят</button>
           <button class="filter-btn" data-filter="consider">Подумать</button>
           <button class="filter-btn" data-filter="reject">Отказ</button>
+          <button class="filter-btn" id="btn-view-trash" data-filter="trash">🗑 Корзина<span id="stat-trash" class="hidden"></span></button>
+        </div>
+        <div class="score-filter">
+          <span>Баллы:</span>
+          <input type="number" id="score-min" value="0"   min="0" max="100" />
+          <span>—</span>
+          <input type="number" id="score-max" value="100" min="0" max="100" />
         </div>
         <select id="sort-select" class="sort-select">
           <option value="score_desc">По баллу ↓</option>
@@ -136,10 +143,26 @@
           <button id="btn-bulk-reject" class="btn btn-danger">
             ✕ На отказ в HH (все «Отказ»)
           </button>
+          <button id="btn-bulk-trash-all" class="btn btn-ghost">
+            🗑 В корзину (все «Отказ»)
+          </button>
+          <button id="btn-refresh" class="btn btn-ghost" title="Обновить данные">
+            ↻ Обновить
+          </button>
           <button id="btn-export" class="btn btn-export">
             ↓ Экспорт в Excel
           </button>
         </div>
+      </div>
+
+      <!-- Панель массового выбора (появляется при выборе кандидатов) -->
+      <div id="bulk-panel" class="bulk-panel hidden">
+        <span id="bulk-count">Выбрано: 0</span>
+        <button class="btn btn-ghost"   id="btn-select-all">Выбрать всех</button>
+        <button class="btn btn-danger"  id="btn-bulk-to-reject">✕ Отказать</button>
+        <button class="btn btn-ghost"   id="btn-bulk-trash">🗑 В корзину</button>
+        <button class="btn btn-ghost"   id="btn-bulk-deselect">Снять выбор</button>
+        <button class="btn btn-danger hidden" id="btn-empty-trash">🗑 Очистить корзину</button>
       </div>
 
       <!-- Список кандидатов -->
@@ -160,6 +183,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=7"></script>
+  <script src="/static/app.js?v=12"></script>
 </body>
 </html>
