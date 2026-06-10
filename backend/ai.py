@@ -10,12 +10,12 @@ _fallback_key = os.getenv("GEMINI_API_KEY")
 MODEL_NAME = "gemini-3.1-flash-lite"
 
 def _make_models(api_key: str):
-    cfg_smart = genai.GenerationConfig(temperature=0, max_output_tokens=1024)
-    cfg_fast  = genai.GenerationConfig(temperature=0, max_output_tokens=256)
+    cfg_smart   = genai.GenerationConfig(temperature=0, max_output_tokens=1024)
+    cfg_screen  = genai.GenerationConfig(temperature=0, max_output_tokens=768)
     genai.configure(api_key=api_key)
     return (
         genai.GenerativeModel(MODEL_NAME, generation_config=cfg_smart),
-        genai.GenerativeModel(MODEL_NAME, generation_config=cfg_fast),
+        genai.GenerativeModel(MODEL_NAME, generation_config=cfg_screen),
     )
 
 # ── Промпты ───────────────────────────────────────────────────────────────────
@@ -25,9 +25,19 @@ VACANCY_SUMMARY_PROMPT = """Сожми требования вакансии в 
 
 ВАКАНСИЯ: {description}"""
 
-SCREEN_PROMPT = """Ты HR. Оцени резюме по требованиям вакансии. Ответь СТРОГО одной строкой JSON без markdown:
-{{"score":75,"category":"consider","comment":"До 80 символов.","questions":["?","?","?"],"summary":"Стек и опыт кандидата до 100 символов"}}
-Правила: suitable>=80, consider 66-79, reject<66. summary — ключевые навыки/стек/опыт кандидата.
+SCREEN_PROMPT = """Ты опытный HR-аналитик. Оцени резюме по требованиям вакансии.
+Ответь СТРОГО одним JSON-объектом без markdown, пробелов вне строк и переносов строк.
+
+Формат ответа:
+{{"score":75,"category":"consider","comment":"Краткий вывод до 100 символов.","summary":"Стек и опыт кандидата до 120 символов","questions":["Вопрос 1","Вопрос 2","Вопрос 3"],"pros":["Плюс 1","Плюс 2","Плюс 3"],"cons":["Минус 1","Минус 2"],"score_breakdown":[{{"criterion":"Название критерия","score":8,"weight":2,"note":"Коротко почему"}}]}}
+
+Правила оценки:
+- suitable>=80, consider 66-79, reject<66
+- summary — ключевые навыки/стек/опыт одной строкой
+- pros — 2-4 конкретных сильных стороны кандидата относительно вакансии
+- cons — 2-4 конкретных слабых стороны или пробела
+- score_breakdown — 4-6 критериев, извлечённых из требований вакансии. Каждый критерий: criterion (название навыка/компетенции), score (0-10), weight (важность: 3=критично, 2=важно, 1=желательно, 0.5=бонус), note (1 фраза почему такая оценка)
+- Итоговый score должен коррелировать с взвешенной суммой score_breakdown: sum(score_i * weight_i) / sum(weight_i) * 10
 
 ТРЕБОВАНИЯ ВАКАНСИИ:{requirements}
 РЕЗЮМЕ:{resume_text}"""
@@ -112,5 +122,26 @@ def screen_resume(requirements: str, resume_text: str, api_key: str | None = Non
         result["summary"] = ""
     if not isinstance(result.get("comment"), str) or not result["comment"].strip():
         result["comment"] = "Комментарий недоступен. Проверьте резюме вручную."
+
+    # Новые поля
+    if not isinstance(result.get("pros"), list):
+        result["pros"] = []
+    if not isinstance(result.get("cons"), list):
+        result["cons"] = []
+
+    breakdown = result.get("score_breakdown")
+    if not isinstance(breakdown, list):
+        breakdown = []
+    clean_breakdown = []
+    for item in breakdown:
+        if not isinstance(item, dict):
+            continue
+        clean_breakdown.append({
+            "criterion": str(item.get("criterion", "")).strip(),
+            "score":     max(0, min(10, int(item.get("score", 0)))),
+            "weight":    float(item.get("weight", 1)),
+            "note":      str(item.get("note", "")).strip(),
+        })
+    result["score_breakdown"] = clean_breakdown
 
     return result

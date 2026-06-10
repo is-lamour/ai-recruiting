@@ -41,9 +41,12 @@ def init_db():
     """)
     # Миграция для существующих БД
     for sql in [
-        "ALTER TABLE vacancies  ADD COLUMN requirements TEXT DEFAULT ''",
-        "ALTER TABLE candidates ADD COLUMN summary      TEXT DEFAULT ''",
-        "ALTER TABLE candidates ADD COLUMN is_trashed   INTEGER DEFAULT 0",
+        "ALTER TABLE vacancies  ADD COLUMN requirements   TEXT DEFAULT ''",
+        "ALTER TABLE candidates ADD COLUMN summary        TEXT DEFAULT ''",
+        "ALTER TABLE candidates ADD COLUMN is_trashed     INTEGER DEFAULT 0",
+        "ALTER TABLE candidates ADD COLUMN pros           TEXT DEFAULT '[]'",
+        "ALTER TABLE candidates ADD COLUMN cons           TEXT DEFAULT '[]'",
+        "ALTER TABLE candidates ADD COLUMN score_breakdown TEXT DEFAULT '[]'",
         # Обнуляем NULL → 0 перед дедупликацией
         "UPDATE candidates SET is_trashed = 0 WHERE is_trashed IS NULL",
         # Дедупликация: если есть и трэшированная, и живая версия — удаляем трэш;

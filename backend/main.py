@@ -224,6 +224,17 @@ def parse_hh_vacancy(url: str):
     return {"title": title, "description": description}
 
 
+# ── Candidate deserializer ───────────────────────────────────────────────────
+
+def _parse_candidate(row) -> dict:
+    d = row_to_dict(row)
+    d["questions"]       = json.loads(d.get("questions")       or "[]")
+    d["pros"]            = json.loads(d.get("pros")            or "[]")
+    d["cons"]            = json.loads(d.get("cons")            or "[]")
+    d["score_breakdown"] = json.loads(d.get("score_breakdown") or "[]")
+    return d
+
+
 # ── Screening ─────────────────────────────────────────────────────────────────
 
 @app.post("/api/screen")
@@ -242,8 +253,9 @@ def screen_candidate(request: Request, data: CandidateScreen):
         try:
             cur = conn.execute(
                 """INSERT INTO candidates
-                   (vacancy_id, name, hh_url, resume_text, score, category, ai_comment, questions, summary, is_trashed)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)""",
+                   (vacancy_id, name, hh_url, resume_text, score, category, ai_comment,
+                    questions, summary, pros, cons, score_breakdown, is_trashed)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)""",
                 (
                     data.vacancy_id,
                     data.name,
@@ -252,8 +264,11 @@ def screen_candidate(request: Request, data: CandidateScreen):
                     result["score"],
                     result["category"],
                     result["comment"],
-                    json.dumps(result["questions"], ensure_ascii=False),
+                    json.dumps(result["questions"],       ensure_ascii=False),
                     result.get("summary", ""),
+                    json.dumps(result.get("pros", []),    ensure_ascii=False),
+                    json.dumps(result.get("cons", []),    ensure_ascii=False),
+                    json.dumps(result.get("score_breakdown", []), ensure_ascii=False),
                 ),
             )
             conn.commit()
@@ -267,9 +282,7 @@ def screen_candidate(request: Request, data: CandidateScreen):
                 (data.hh_url, data.vacancy_id),
             ).fetchone()
 
-        d = row_to_dict(row)
-        d["questions"] = json.loads(d["questions"] or "[]")
-        return d
+        return _parse_candidate(row)
     finally:
         conn.close()
 
@@ -287,12 +300,7 @@ def list_candidates(vacancy_id: int, category: Optional[str] = None, trashed: bo
             params.append(category)
         query += " ORDER BY score DESC"
         rows = conn.execute(query, params).fetchall()
-        result = []
-        for row in rows:
-            d = row_to_dict(row)
-            d["questions"] = json.loads(d["questions"] or "[]")
-            result.append(d)
-        return result
+        return [_parse_candidate(r) for r in rows]
     finally:
         conn.close()
 
@@ -311,9 +319,7 @@ def update_status(candidate_id: int, data: StatusUpdate):
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Кандидат не найден")
-        d = row_to_dict(row)
-        d["questions"] = json.loads(d["questions"] or "[]")
-        return d
+        return _parse_candidate(row)
     finally:
         conn.close()
 
@@ -402,11 +408,7 @@ def export_candidates(vacancy_id: int):
         rows = conn.execute(
             "SELECT * FROM candidates WHERE vacancy_id = ? ORDER BY score DESC", (vacancy_id,)
         ).fetchall()
-        candidates = []
-        for r in rows:
-            d = row_to_dict(r)
-            d["questions"] = json.loads(d["questions"] or "[]")
-            candidates.append(d)
+        candidates = [_parse_candidate(r) for r in rows]
     finally:
         conn.close()
 
@@ -436,14 +438,16 @@ def export_candidates(vacancy_id: int):
     }
 
     COLUMNS = [
-        ("Балл",       8),
-        ("Категория",  12),
-        ("Имя",        24),
-        ("Статус",     16),
-        ("Краткое резюме", 40),
-        ("Комментарий AI", 44),
+        ("Балл",              8),
+        ("Категория",        12),
+        ("Имя",              24),
+        ("Статус",           16),
+        ("Краткое резюме",   40),
+        ("Плюсы",            36),
+        ("Минусы",           36),
+        ("Комментарий AI",   44),
         ("Вопросы по пробелам", 50),
-        ("Ссылка",     36),
+        ("Ссылка",           36),
     ]
 
     wb = openpyxl.Workbook()
@@ -451,7 +455,7 @@ def export_candidates(vacancy_id: int):
     ws.title = vacancy["title"][:30]
 
     # ── Шапка с названием вакансии ────────────────────────────────────────────
-    ws.merge_cells("A1:H1")
+    ws.merge_cells("A1:J1")
     title_cell = ws["A1"]
     title_cell.value = vacancy["title"]
     title_cell.font = Font(bold=True, size=13, color="1E293B")
@@ -459,7 +463,7 @@ def export_candidates(vacancy_id: int):
     ws.row_dimensions[1].height = 22
 
     if vacancy.get("requirements"):
-        ws.merge_cells("A2:H2")
+        ws.merge_cells("A2:J2")
         req_cell = ws["A2"]
         req_cell.value = vacancy["requirements"]
         req_cell.font = Font(size=10, color="64748B")
@@ -485,6 +489,8 @@ def export_candidates(vacancy_id: int):
         fill = FILLS.get(cat, FILLS["pending"])
         score_font = SCORE_FONT.get(cat, SCORE_FONT["pending"])
         questions_text = "\n".join(f"• {q}" for q in c["questions"]) if c["questions"] else ""
+        pros_text      = "\n".join(f"+ {p}" for p in c.get("pros", [])) if c.get("pros") else ""
+        cons_text      = "\n".join(f"- {m}" for m in c.get("cons", [])) if c.get("cons") else ""
 
         data_row = [
             c.get("score"),
@@ -492,6 +498,8 @@ def export_candidates(vacancy_id: int):
             c.get("name") or "Кандидат",
             STATUS_LABELS.get(c.get("status", "new"), ""),
             c.get("summary") or "",
+            pros_text,
+            cons_text,
             c.get("ai_comment") or "",
             questions_text,
             c.get("hh_url") or "",
@@ -506,7 +514,7 @@ def export_candidates(vacancy_id: int):
             if col_idx == 1:
                 cell.font = score_font
                 cell.alignment = Alignment(horizontal="center", vertical="top")
-            if col_idx == 8 and value:  # ссылка
+            if col_idx == 10 and value:  # ссылка
                 cell.hyperlink = value
                 cell.font = Font(color="2563EB", underline="single")
 
@@ -515,9 +523,11 @@ def export_candidates(vacancy_id: int):
             len(str(data_row[4] or "").split("\n")),
             len(str(data_row[5] or "").split("\n")),
             len(str(data_row[6] or "").split("\n")),
+            len(str(data_row[7] or "").split("\n")),
+            len(str(data_row[8] or "").split("\n")),
             1
         )
-        ws.row_dimensions[r].height = max(18, min(max_lines * 15, 90))
+        ws.row_dimensions[r].height = max(18, min(max_lines * 15, 110))
 
     # ── Закрепить заголовок ───────────────────────────────────────────────────
     ws.freeze_panes = ws.cell(row=header_row + 1, column=1)

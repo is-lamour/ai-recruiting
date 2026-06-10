@@ -563,6 +563,149 @@ main { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
   border-color: var(--reject);
 }
 
+/* ── Pros / Cons table ───────────────────────────────────────────────────── */
+.pros-cons-table {
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  overflow: hidden;
+  font-size: 12px;
+}
+
+.pct-header {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  background: #f1f5f9;
+}
+
+.pct-head-pro,
+.pct-head-con {
+  padding: 5px 10px;
+  font-weight: 700;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+}
+
+.pct-head-pro {
+  color: var(--suitable);
+  border-right: 1px solid var(--border);
+}
+
+.pct-head-con {
+  color: var(--consider);
+}
+
+.pct-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: 1px solid var(--border);
+}
+
+.pct-pro,
+.pct-con {
+  padding: 5px 10px;
+  line-height: 1.4;
+  min-height: 26px;
+}
+
+.pct-pro {
+  color: #166534;
+  background: #f0fdf4;
+  border-right: 1px solid var(--border);
+}
+
+.pct-con {
+  color: #92400e;
+  background: #fffbeb;
+}
+
+/* ── Score breakdown ─────────────────────────────────────────────────────── */
+.breakdown-toggle {
+  font-size: 12px;
+  color: #6366f1;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  margin-bottom: 4px;
+  display: block;
+}
+.breakdown-toggle:hover { text-decoration: underline; }
+
+.breakdown-table {
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.bd-row {
+  display: grid;
+  grid-template-columns: 130px 1fr 48px 34px minmax(0,1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  border-top: 1px solid var(--border);
+}
+.bd-row:first-child { border-top: none; }
+
+/* Цвет всей строки по результату */
+.bd-row.bd-good { background: #f0fdf4; }
+.bd-row.bd-mid  { background: #fffbeb; }
+.bd-row.bd-bad  { background: #fff1f2; }
+
+.bd-criterion {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bd-good .bd-criterion { color: #166534; }
+.bd-mid  .bd-criterion { color: #92400e; }
+.bd-bad  .bd-criterion { color: #991b1b; }
+
+.bd-bar-wrap {
+  background: #e2e8f0;
+  border-radius: 4px;
+  height: 7px;
+  overflow: hidden;
+}
+
+.bd-bar { height: 100%; border-radius: 4px; transition: width .3s; }
+.bd-good .bd-bar { background: var(--suitable); }
+.bd-mid  .bd-bar { background: var(--consider); }
+.bd-bad  .bd-bar { background: var(--reject); }
+
+.bd-score-badge {
+  font-weight: 700;
+  font-size: 13px;
+  text-align: right;
+  white-space: nowrap;
+}
+.bd-good .bd-score-badge { color: var(--suitable); }
+.bd-mid  .bd-score-badge { color: var(--consider); }
+.bd-bad  .bd-score-badge { color: var(--reject); }
+
+.bd-of { font-size: 10px; font-weight: 400; color: var(--text-muted); }
+
+.bd-weight {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.bd-note {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ── Utility ─────────────────────────────────────────────────────────────── */
 .hidden { display: none !important; }
 

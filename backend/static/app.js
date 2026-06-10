@@ -334,16 +334,58 @@ function renderCandidates() {
       btn.textContent = hidden ? "▸ Вопросы по пробелам" : "▾ Вопросы по пробелам";
     });
   });
+  list.querySelectorAll(".breakdown-toggle").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const bd = document.getElementById(`bd-${btn.dataset.id}`);
+      const hidden = bd.classList.toggle("hidden");
+      btn.textContent = hidden ? "▸ Разбивка баллов" : "▾ Разбивка баллов";
+    });
+  });
 }
 
 function buildCard(c) {
-  const cat = c.category || "pending";
+  const cat       = c.category || "pending";
   const questions = Array.isArray(c.questions) ? c.questions : [];
+  const pros      = Array.isArray(c.pros) ? c.pros : [];
+  const cons      = Array.isArray(c.cons) ? c.cons : [];
+  const breakdown = Array.isArray(c.score_breakdown) ? c.score_breakdown : [];
   const statusLabel = {
     new: "", to_reject: "Помечен на отказ", to_huntflow: "Помечен в Huntflow",
     rejected: "Отказ отправлен", huntflow_sent: "Отправлен в Huntflow"
   }[c.status] || "";
   const checked = selectedIds.has(c.id) ? "checked" : "";
+
+  const pcHtml = (pros.length || cons.length) ? (() => {
+    const len = Math.max(pros.length, cons.length);
+    const rows = Array.from({length: len}, (_, i) => `
+      <div class="pct-row">
+        <span class="pct-pro">${pros[i] ? escHtml(pros[i]) : ""}</span>
+        <span class="pct-con">${cons[i] ? escHtml(cons[i]) : ""}</span>
+      </div>`).join("");
+    return `<div class="pros-cons-table">
+      <div class="pct-header">
+        <span class="pct-head-pro">+ Плюсы</span>
+        <span class="pct-head-con">− Минусы</span>
+      </div>
+      ${rows}
+    </div>`;
+  })() : "";
+
+  const breakdownHtml = breakdown.length ? `
+    <button class="breakdown-toggle" data-id="${c.id}">▸ Разбивка баллов</button>
+    <div class="breakdown-table hidden" id="bd-${c.id}">
+      ${breakdown.map(b => {
+        const pct = Math.round(b.score * 10);
+        const cls = pct >= 70 ? "bd-good" : pct >= 40 ? "bd-mid" : "bd-bad";
+        return `<div class="bd-row ${cls}">
+          <span class="bd-criterion">${escHtml(b.criterion)}</span>
+          <div class="bd-bar-wrap"><div class="bd-bar" style="width:${pct}%"></div></div>
+          <span class="bd-score-badge">${b.score}<span class="bd-of">/10</span></span>
+          <span class="bd-weight">×${b.weight}</span>
+          ${b.note ? `<span class="bd-note">${escHtml(b.note)}</span>` : ""}
+        </div>`;
+      }).join("")}
+    </div>` : "";
 
   return `
   <div class="candidate-card status-${c.status}${selectedIds.has(c.id) ? " selected" : ""}" data-id="${c.id}">
@@ -362,6 +404,8 @@ function buildCard(c) {
       </div>
       ${c.summary ? `<p class="resume-summary">${escHtml(c.summary)}</p>` : ""}
       <p class="ai-comment">${escHtml(c.ai_comment || "")}</p>
+      ${pcHtml}
+      ${breakdownHtml}
       ${questions.length ? `
         <button class="questions-toggle" data-id="${c.id}">▸ Вопросы по пробелам</button>
         <ul class="questions-list hidden" id="q-${c.id}">
