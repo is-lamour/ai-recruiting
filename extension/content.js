@@ -2,6 +2,14 @@
 // Прогресс передаётся через chrome.storage.session (надёжнее для долгих операций в MV3)
 
 let screeningActive = false;
+let cachedLinks = null;
+let cachedLinksUrl = null;
+let cachedLinksMaxPages = null;
+
+// Сбрасываем зависший прогресс при перезагрузке страницы
+chrome.runtime.sendMessage({ action: "save_progress", data: { active: false } }, () => {
+  if (chrome.runtime.lastError) { /* ignore */ }
+});
 
 // ── API helpers (через background, обход CORS) ────────────────────────────────
 
@@ -70,7 +78,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       }
       // Отвечаем СРАЗУ — не держим канал открытым (MV3 ограничение ~5 мин)
       sendResponse({ status: "started" });
-      startScreening(message.vacancyId); // fire-and-forget, прогресс через storage
+      startScreening(message.vacancyId, message.maxPages); // fire-and-forget, прогресс через storage
       return;
 
     case "execute_rejections":
@@ -78,27 +86,47 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       return true; // короткая операция, держим канал
 
     case "diagnose":
-      sendResponse(diagnose());
-      return;
+      diagnose().then(sendResponse);
+      return true;
   }
 });
 
 // ── Диагностика ───────────────────────────────────────────────────────────────
 
-function diagnose() {
-  const links = getLinksFromDOM();
-  const allResumeEls = document.querySelectorAll("a[href*='/resume/']");
+async function diagnose() {
+  const cards = document.querySelectorAll('[data-qa*="resume-serp__resume"][data-resume-hash]');
+
+  // Определяем общее число страниц из пейджера
+  let totalPages = 1;
+  document.querySelectorAll('[data-qa="pager-page"]').forEach(el => {
+    const n = parseInt(el.textContent.trim(), 10);
+    if (!isNaN(n) && n > totalPages) totalPages = n;
+  });
+  // Если пейджер не найден — пробуем через page= в ссылках (нумерация с 0)
+  if (totalPages === 1) {
+    document.querySelectorAll('a[href*="page="]').forEach(el => {
+      const m = el.href.match(/[?&]page=(\d+)/);
+      if (m) {
+        const n = parseInt(m[1], 10) + 1;
+        if (n > totalPages) totalPages = n;
+      }
+    });
+  }
+  // Если есть кнопка "следующая" — точно больше 1 страницы
+  if (totalPages === 1 && findNextPageButton()) totalPages = 2;
+
   return {
     url: window.location.href,
-    linksFound: links.length,
-    allResumeLinksTotal: allResumeEls.length,
+    linksFound: cards.length,
+    shellsInDOM: cards.length,
+    totalPages,
     pageTitle: document.title,
   };
 }
 
 // ── Скрининг ──────────────────────────────────────────────────────────────────
 
-async function startScreening(vacancyId) {
+async function startScreening(vacancyId, maxPages) {
   screeningActive = true;
   await resetCancel();
 
@@ -112,7 +140,12 @@ async function startScreening(vacancyId) {
       alreadyScreened = new Set(screened);
     } catch { /* ignore */ }
 
-    const links = await collectAllResumeLinks();
+    if (!cachedLinks || cachedLinksUrl !== window.location.href || cachedLinksMaxPages !== maxPages) {
+      cachedLinks = await collectAllResumeLinks(maxPages);
+      cachedLinksUrl = window.location.href;
+      cachedLinksMaxPages = maxPages;
+    }
+    const links = cachedLinks;
 
     if (links.length === 0) {
       saveProgress({ active: false, done: true, error: "Резюме не найдены", vacancyId });
@@ -154,7 +187,6 @@ async function startScreening(vacancyId) {
 
       const name = link.name || "";
       saveProgress({ active: true, current: processed + errors, total, skipped, vacancyId, name });
-      await sleep(600);
     }
 
   } catch (e) {
@@ -168,22 +200,67 @@ async function startScreening(vacancyId) {
 
 // ── Сбор ссылок ───────────────────────────────────────────────────────────────
 
-async function collectAllResumeLinks() {
+async function collectAllResumeLinks(maxPages) {
+  const vacancyId = new URLSearchParams(window.location.search).get("vacancyId") || "";
   const links = [];
-  let page = 0;
+  const seen = new Set();
+  const pageLimit = (maxPages && maxPages > 0) ? maxPages : 20;
 
-  while (page < 20) {
-    const pageLinks = getLinksFromDOM();
-    pageLinks.forEach(l => {
-      if (!links.find(x => x.storeUrl === l.storeUrl)) links.push(l);
-    });
-
-    const nextBtn = findNextPageButton();
-    if (!nextBtn) break;
-    nextBtn.click();
-    await sleep(2000);
-    page++;
+  // Основной путь: fetch HTML страницы и берём все хэши из JSON
+  try {
+    const base = new URL(window.location.href);
+    let page = 0;
+    while (page < pageLimit) {
+      base.searchParams.set('page', page);
+      const html = await fetch(base.toString(), { credentials: 'include' }).then(r => r.text());
+      // Берём только хэши внутри объектов с полем hhid — это резюме-отклики
+      const hashes = [...html.matchAll(/"hash":"([a-f0-9]{32,})"[^}]{0,200}"hhid"/g)].map(m => m[1]);
+      if (hashes.length === 0) break;
+      let added = 0;
+      hashes.forEach(hash => {
+        if (seen.has(hash)) return;
+        seen.add(hash);
+        const cleanUrl = `${window.location.origin}/resume/${hash}`;
+        const fetchUrl = vacancyId ? `${cleanUrl}?vacancyId=${vacancyId}` : cleanUrl;
+        links.push({ fetchUrl, storeUrl: cleanUrl, name: "" });
+        added++;
+      });
+      if (added === 0) break;
+      page++;
+    }
+  } catch (e) {
+    console.warn("[HH Screen] fetch-parse failed, falling back to scroll", e);
   }
+
+  // Fallback: скролл по DOM текущей страницы
+  if (links.length === 0) {
+    const divider = findSuggestedDivider();
+    const savedScrollY = window.scrollY;
+
+    function harvestVisible() {
+      document.querySelectorAll('[data-qa*="resume-serp__resume"][data-resume-hash]').forEach(card => {
+        if (divider && !isBeforeDivider(card, divider)) return;
+        const hash = card.dataset.resumeHash;
+        if (!hash || seen.has(hash)) return;
+        seen.add(hash);
+        const cleanUrl = `${window.location.origin}/resume/${hash}`;
+        const fetchUrl = vacancyId ? `${cleanUrl}?vacancyId=${vacancyId}` : cleanUrl;
+        const name = card.querySelector('[data-qa="serp-item__title"]')?.textContent?.trim() || "";
+        links.push({ fetchUrl, storeUrl: cleanUrl, name });
+      });
+    }
+
+    harvestVisible();
+    const step = Math.floor(window.innerHeight * 0.4);
+    const totalHeight = document.documentElement.scrollHeight - window.innerHeight;
+    for (let y = step; y <= totalHeight + step; y += step) {
+      window.scrollTo({ top: Math.min(y, totalHeight), behavior: "instant" });
+      await sleep(80);
+      harvestVisible();
+    }
+    window.scrollTo({ top: savedScrollY, behavior: "instant" });
+  }
+
   return links;
 }
 
@@ -210,6 +287,7 @@ function getLinksFromDOM() {
   const divider = findSuggestedDivider();
 
   const selectors = [
+    "[data-qa='serp-item__title']",
     "[data-qa='resume-serp__title-link']",
     "[data-qa='vacancy-response-item__candidate-link']",
     "[data-qa='resume__name']",
@@ -220,7 +298,7 @@ function getLinksFromDOM() {
     document.querySelectorAll(sel).forEach(el => {
       const href = el.getAttribute("href") || "";
       if (!href.includes("/resume/")) return;
-      if (!isBeforeDivider(el, divider)) return; // пропускаем "подходящие"
+      if (!isBeforeDivider(el, divider)) return;
 
       const fullUrl  = href.startsWith("http") ? href : window.location.origin + href;
       const cleanUrl = fullUrl.split("?")[0].split("#")[0];
@@ -233,6 +311,7 @@ function getLinksFromDOM() {
   }
   return links;
 }
+
 
 function findNextPageButton() {
   return (
@@ -299,6 +378,8 @@ function extractResumeData(doc) {
 // ── Отказы на HH ─────────────────────────────────────────────────────────────
 
 async function executeRejections(candidates, sendResponse) {
+  const isConsider = /collection=consider/i.test(window.location.href);
+
   // Фаза 1: отмечаем чекбоксы на карточках
   const selected = [];
   for (const candidate of candidates) {
@@ -312,17 +393,33 @@ async function executeRejections(candidates, sendResponse) {
     return;
   }
 
-  // Фаза 2: общая кнопка "Отказать" → "Не подходит"
-  const bulkOk = await clickBulkDiscard();
-
   let rejected = 0;
-  if (bulkOk) {
+
+  if (isConsider) {
+    // Вкладка "Подумать" — нет bulk-кнопки, кликаем "Отказать" на каждой карточке
     for (const c of selected) {
-      try {
-        await bgPatch(`/api/candidates/${c.id}`, { status: "rejected" });
-        rejected++;
-      } catch (e) {
-        console.warn("[HH Reject] patch error:", e.message);
+      const ok = await rejectCandidatePerCard(c.hh_url);
+      if (ok) {
+        try {
+          await bgPatch(`/api/candidates/${c.id}`, { status: "rejected" });
+          rejected++;
+        } catch (e) {
+          console.warn("[HH Reject] patch error:", e.message);
+        }
+      }
+      await sleep(400);
+    }
+  } else {
+    // Вкладка "Отклики" — bulk кнопка responses-batch-reject
+    const bulkOk = await clickBulkDiscard();
+    if (bulkOk) {
+      for (const c of selected) {
+        try {
+          await bgPatch(`/api/candidates/${c.id}`, { status: "rejected" });
+          rejected++;
+        } catch (e) {
+          console.warn("[HH Reject] patch error:", e.message);
+        }
       }
     }
   }
@@ -355,18 +452,15 @@ async function tickCandidateCheckbox(resumeUrl) {
 
 async function clickBulkDiscard() {
   // Ждём появления тулбара массовых действий (до 3 сек)
+  // data-qa="responses-batch-reject" — точный селектор тулбара на вкладке Отклики
   let bulkBtn = null;
   for (let i = 0; i < 10 && !bulkBtn; i++) {
     await sleep(300);
     bulkBtn =
+      document.querySelector('[data-qa="responses-batch-reject"]') ||
       document.querySelector('[data-qa*="bulk"][data-qa*="discard"]') ||
       document.querySelector('[data-qa*="discard"][data-qa*="bulk"]') ||
-      document.querySelector('[data-qa*="bulk-action"][data-qa*="discard"]') ||
-      // Кнопка "Отказать" вне карточек (в тулбаре выделения)
-      Array.from(document.querySelectorAll('[role="button"], button'))
-        .find(e => /^отказать$/i.test(e.textContent?.trim()) &&
-                   !e.closest('[data-qa*="resume-serp__item"]') &&
-                   !e.closest('[data-qa*="vacancy-response-item"]'));
+      document.querySelector('[data-qa*="bulk-action"][data-qa*="discard"]');
   }
 
   console.log(`[HH Reject] bulk кнопка найдена: ${!!bulkBtn} / qa=${bulkBtn?.dataset?.qa}`);
@@ -411,6 +505,66 @@ async function clickBulkDiscard() {
 
   document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   return false;
+}
+
+// Для вкладки "Подумать" — кликаем "Отказать" напрямую на карточке кандидата
+async function rejectCandidatePerCard(resumeUrl) {
+  const resumeId = resumeUrl.split("/resume/")[1]?.split("?")[0]?.split("/")[0];
+  if (!resumeId) return false;
+
+  const link = document.querySelector(`a[href*="${resumeId}"]`);
+  if (!link) { console.log(`[HH Reject] ссылка не найдена: ${resumeId}`); return false; }
+
+  // Находим карточку кандидата
+  let card = link.parentElement;
+  while (card && card !== document.body) {
+    if (card.querySelector('[data-qa="employee-discard-on-topic"]')) break;
+    card = card.parentElement;
+  }
+  if (!card || card === document.body) {
+    console.log(`[HH Reject] карточка не найдена: ${resumeId}`);
+    return false;
+  }
+
+  const discardBtn = card.querySelector('[data-qa="employee-discard-on-topic"]');
+  if (!discardBtn) return false;
+
+  discardBtn.click();
+  console.log(`[HH Reject] кликнули "Отказать" на карточке: ${resumeId}`);
+
+  // Ждём дропдаун/модал с вариантами статуса, выбираем "Не подходит"
+  let notSuitable = null;
+  for (let i = 0; i < 10 && !notSuitable; i++) {
+    await sleep(250);
+    notSuitable =
+      document.querySelector('[data-qa*="discard_by_employer_one-click"]') ||
+      document.querySelector('[data-qa*="discard_by_employer"]') ||
+      Array.from(document.querySelectorAll("[role='button'], button, li, [role='menuitem'], [role='option']"))
+        .find(e => /не[\s ]+подходит/i.test(e.textContent));
+  }
+
+  console.log(`[HH Reject] "Не подходит" найдено: ${!!notSuitable}`);
+  if (!notSuitable) return false;
+
+  notSuitable.click();
+
+  // Подтверждение "Изменить статус"
+  let confirmBtn = null;
+  for (let i = 0; i < 8 && !confirmBtn; i++) {
+    await sleep(250);
+    confirmBtn =
+      document.querySelector('[data-qa*="status-change-confirm"]') ||
+      document.querySelector('[data-qa*="confirm"]') ||
+      Array.from(document.querySelectorAll('[role="button"], button'))
+        .find(e => /изменить[\s ]+статус/i.test(e.textContent?.trim()));
+  }
+  if (confirmBtn) {
+    console.log(`[HH Reject] "Изменить статус" найдено, кликаем`);
+    confirmBtn.click();
+    await sleep(500);
+  }
+
+  return true;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

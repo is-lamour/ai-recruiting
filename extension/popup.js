@@ -313,11 +313,14 @@ async function startScreening() {
   if (!selectedVacancyId) { alert("Выберите вакансию"); return; }
   if (!activeTabId) { alert("Откройте страницу откликов на hh.kz"); return; }
 
+  const maxPages = parseInt($("pages-input")?.value, 10) || 5;
+
   let ack;
   try {
     ack = await chrome.tabs.sendMessage(activeTabId, {
       action: "start_screening",
       vacancyId: parseInt(selectedVacancyId),
+      maxPages,
     });
   } catch (e) {
     alert("Ошибка подключения к странице.\nОбновите страницу hh.kz (F5) и попробуйте снова.\n\n" + e.message);
@@ -493,10 +496,16 @@ async function runDiagnose() {
   if (!activeTabId) { $("diagnose-result").textContent = "Не на HH странице"; return; }
   try {
     const r = await chrome.tabs.sendMessage(activeTabId, { action: "diagnose" });
+    const pagesLabel = $("pages-total");
+    if (pagesLabel && r.totalPages > 1) {
+      pagesLabel.textContent = `из ${r.totalPages}`;
+      const inp = $("pages-input");
+      if (inp) { inp.max = r.totalPages; }
+    }
     $("diagnose-result").textContent = [
       `URL: ${r.url}`,
-      `Готово к скринингу: ${r.linksFound} резюме`,
-      `Всего ссылок на резюме: ${r.allResumeLinksTotal}`,
+      `Резюме на странице: ${r.linksFound}`,
+      `Страниц всего: ${r.totalPages}`,
     ].join("\n");
   } catch (e) {
     $("diagnose-result").textContent = "Ошибка: " + e.message;
