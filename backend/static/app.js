@@ -58,6 +58,9 @@ async function selectVacancy(id) {
   currentVacancy = allVacancies.find(v => v.id === id) || null;
   viewMode = "main";
   selectedIds.clear();
+  currentMetrics = [];
+  stopMetricsPoll();
+  document.getElementById("metrics-section").classList.add("hidden");
 
   // Сбросить активный фильтр на "Все"
   document.querySelectorAll(".filter-btn").forEach(b => b.classList.remove("active"));
@@ -220,6 +223,144 @@ function copyBoolean(elementId) {
   });
 }
 
+// ── Metrics ───────────────────────────────────────────────────────────────────
+
+let currentMetrics = [];
+let metricsPollTimer = null;
+
+function stopMetricsPoll() {
+  if (metricsPollTimer) { clearInterval(metricsPollTimer); metricsPollTimer = null; }
+}
+
+function startMetricsPoll(vacancyId) {
+  stopMetricsPoll();
+  metricsPollTimer = setInterval(async () => {
+    if (currentVacancyId !== vacancyId) { stopMetricsPoll(); return; }
+    try {
+      const res = await fetch(`${API}/api/vacancies/${vacancyId}/metrics`);
+      if (!res.ok) return;
+      const metrics = await res.json();
+      if (metrics && metrics.length > 0) {
+        currentMetrics = metrics;
+        renderMetrics(metrics);
+        document.getElementById("metrics-generating").classList.add("hidden");
+        document.getElementById("btn-regen-metrics").disabled = false;
+        stopMetricsPoll();
+      }
+    } catch { /* ignore */ }
+  }, 2000);
+}
+
+async function loadMetrics(vacancyId) {
+  try {
+    const res = await fetch(`${API}/api/vacancies/${vacancyId}/metrics`);
+    if (!res.ok) return;
+    currentMetrics = await res.json();
+    renderMetrics(currentMetrics);
+  } catch { /* ignore */ }
+}
+
+function renderMetrics(metrics) {
+  const list = document.getElementById("metrics-list");
+  if (!metrics || metrics.length === 0) {
+    list.innerHTML = '<div class="metrics-empty">Метрики не заданы</div>';
+    return;
+  }
+  list.innerHTML = metrics.map((m, i) => `
+    <div class="metric-row" data-index="${i}">
+      <span class="metric-name" contenteditable="true" data-index="${i}">${escHtml(m.name)}</span>
+      <div class="metric-slider-wrap">
+        <input type="range" class="metric-slider" data-index="${i}"
+          min="0" max="10" step="0.5" value="${m.weight}" />
+        <span class="metric-weight-val" id="mw-${i}">${m.weight}</span>
+      </div>
+      <button class="metric-del-btn" data-index="${i}" title="Удалить">✕</button>
+    </div>
+  `).join("");
+
+  list.querySelectorAll(".metric-slider").forEach(slider => {
+    const idx = +slider.dataset.index;
+    slider.addEventListener("input", () => {
+      const val = parseFloat(slider.value);
+      currentMetrics[idx].weight = val;
+      document.getElementById(`mw-${idx}`).textContent = val;
+    });
+  });
+
+  list.querySelectorAll(".metric-name[contenteditable]").forEach(el => {
+    el.addEventListener("blur", () => {
+      const idx = +el.dataset.index;
+      currentMetrics[idx].name = el.textContent.trim();
+    });
+  });
+
+  list.querySelectorAll(".metric-del-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const idx = +btn.dataset.index;
+      currentMetrics.splice(idx, 1);
+      renderMetrics(currentMetrics);
+    });
+  });
+}
+
+async function saveMetrics() {
+  if (!currentVacancyId) return;
+  const btn = document.getElementById("btn-save-metrics");
+  btn.textContent = "Сохраняем...";
+  btn.disabled = true;
+  try {
+    const res = await fetch(`${API}/api/vacancies/${currentVacancyId}/metrics`, {
+      method: "PUT",
+      headers: apiHeaders(),
+      body: JSON.stringify(currentMetrics),
+    });
+    if (res.ok) {
+      currentMetrics = await res.json();
+      renderMetrics(currentMetrics);
+      showMetricsStatus("Сохранено ✓");
+    }
+  } finally {
+    btn.textContent = "Сохранить";
+    btn.disabled = false;
+  }
+}
+
+async function regenMetrics() {
+  if (!currentVacancyId) return;
+  const btn = document.getElementById("btn-regen-metrics");
+  btn.disabled = true;
+  document.getElementById("metrics-generating").classList.remove("hidden");
+  document.getElementById("metrics-list").innerHTML = "";
+  try {
+    await fetch(`${API}/api/vacancies/${currentVacancyId}/generate-metrics`, {
+      method: "POST",
+      headers: apiHeaders(),
+    });
+    startMetricsPoll(currentVacancyId);
+  } catch {
+    document.getElementById("metrics-generating").classList.add("hidden");
+    btn.disabled = false;
+  }
+}
+
+function addMetric() {
+  const input = document.getElementById("metrics-new-name");
+  const name = input.value.trim();
+  if (!name) return;
+  currentMetrics.push({ name, weight: 5.0 });
+  renderMetrics(currentMetrics);
+  input.value = "";
+  document.getElementById("metrics-add-row").classList.add("hidden");
+  document.getElementById("btn-show-add-metric").classList.remove("hidden");
+}
+
+function showMetricsStatus(msg) {
+  const el = document.getElementById("metrics-status");
+  el.textContent = msg;
+  el.classList.remove("hidden");
+  setTimeout(() => el.classList.add("hidden"), 2000);
+}
+
 // ── Vacancy CRUD ──────────────────────────────────────────────────────────────
 
 function openNewVacancyForm() {
@@ -332,6 +473,7 @@ async function deleteVacancy() {
 
   stopSummaryPoll();
   stopBooleanPoll();
+  stopMetricsPoll();
   await fetch(`${API}/api/vacancies/${currentVacancy.id}`, { method: "DELETE" });
   currentVacancyId = null;
   currentVacancy = null;
@@ -670,6 +812,7 @@ function setupListeners() {
     const id = e.target.value;
     stopSummaryPoll();
     stopBooleanPoll();
+    stopMetricsPoll();
     if (id) {
       await selectVacancy(parseInt(id));
     } else {
@@ -697,6 +840,43 @@ function setupListeners() {
     const btn  = document.getElementById("btn-toggle-desc");
     const hidden = wrap.classList.toggle("hidden");
     btn.textContent = hidden ? "▾ Описание" : "▴ Описание";
+  });
+
+  document.getElementById("btn-metrics-info").addEventListener("click", () => {
+    document.getElementById("metrics-info-modal").classList.remove("hidden");
+  });
+  document.getElementById("metrics-info-close").addEventListener("click", () => {
+    document.getElementById("metrics-info-modal").classList.add("hidden");
+  });
+  document.getElementById("metrics-info-modal").addEventListener("click", e => {
+    if (e.target === e.currentTarget) e.currentTarget.classList.add("hidden");
+  });
+
+  document.getElementById("btn-toggle-metrics").addEventListener("click", async () => {
+    const section = document.getElementById("metrics-section");
+    const wasHidden = section.classList.contains("hidden");
+    section.classList.toggle("hidden");
+    if (wasHidden && currentVacancyId) {
+      await loadMetrics(currentVacancyId);
+      if (currentMetrics.length === 0) {
+        regenMetrics();
+      }
+    }
+  });
+  document.getElementById("btn-regen-metrics").addEventListener("click", regenMetrics);
+  document.getElementById("btn-save-metrics").addEventListener("click", saveMetrics);
+  document.getElementById("btn-show-add-metric").addEventListener("click", () => {
+    document.getElementById("metrics-add-row").classList.remove("hidden");
+    document.getElementById("btn-show-add-metric").classList.add("hidden");
+    document.getElementById("metrics-new-name").focus();
+  });
+  document.getElementById("btn-add-metric").addEventListener("click", addMetric);
+  document.getElementById("metrics-new-name").addEventListener("keydown", e => {
+    if (e.key === "Enter") addMetric();
+    if (e.key === "Escape") {
+      document.getElementById("metrics-add-row").classList.add("hidden");
+      document.getElementById("btn-show-add-metric").classList.remove("hidden");
+    }
   });
 
   document.getElementById("btn-toggle-boolean").addEventListener("click", () => {

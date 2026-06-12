@@ -73,6 +73,7 @@ def init_db():
         )""",
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_candidates_vacancy_url ON candidates(vacancy_id, hh_url)",
         "ALTER TABLE vacancies ADD COLUMN boolean_search TEXT DEFAULT ''",
+        "ALTER TABLE vacancies ADD COLUMN metrics TEXT DEFAULT '[]'",
     ]:
         try:
             conn.execute(sql)

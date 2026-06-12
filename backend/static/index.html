@@ -52,6 +52,7 @@
       </div>
       <div class="vacancy-info-actions">
         <button class="btn btn-ghost btn-sm" id="btn-toggle-desc">▾ Описание</button>
+        <button class="btn btn-ghost btn-sm" id="btn-toggle-metrics">📊 Метрики</button>
         <button class="btn btn-ghost btn-sm" id="btn-toggle-boolean">⚡ Boolean</button>
         <button class="btn btn-ghost btn-sm" id="btn-edit-vacancy">✏️ Изменить</button>
         <button class="btn btn-danger-sm" id="btn-delete-vacancy">🗑</button>
@@ -59,6 +60,30 @@
     </div>
     <div id="vp-desc-wrap" class="vacancy-desc-wrap hidden">
       <pre id="vp-description"></pre>
+    </div>
+
+    <!-- Метрики секция -->
+    <div id="metrics-section" class="metrics-section hidden">
+      <div class="metrics-header">
+        <div style="display:flex;align-items:center;gap:6px">
+          <span class="metrics-title">Метрики оценки кандидатов</span>
+          <button class="metrics-info-btn" id="btn-metrics-info" title="Как считается оценка">?</button>
+        </div>
+        <div class="metrics-header-actions">
+          <span id="metrics-status" class="metrics-status hidden"></span>
+          <button class="btn btn-ghost btn-sm" id="btn-regen-metrics">↺ Перегенерировать</button>
+          <button class="btn btn-primary btn-sm" id="btn-save-metrics">Сохранить</button>
+        </div>
+      </div>
+      <div id="metrics-generating" class="metrics-generating hidden">
+        <span class="spinner"></span> Генерируем метрики...
+      </div>
+      <div id="metrics-list"></div>
+      <div id="metrics-add-row" class="metrics-add-row hidden">
+        <input type="text" id="metrics-new-name" placeholder="Название метрики..." class="metrics-new-input" />
+        <button class="btn btn-ghost btn-sm" id="btn-add-metric">+ Добавить</button>
+      </div>
+      <button class="btn btn-ghost btn-sm metrics-show-add" id="btn-show-add-metric">+ Добавить метрику</button>
     </div>
 
     <!-- Boolean search секция -->
@@ -208,6 +233,39 @@
     </div>
   </main>
 
+  <!-- Попап: как считается оценка -->
+  <div id="metrics-info-modal" class="modal-overlay hidden">
+    <div class="modal" style="max-width:460px">
+      <button class="modal-close" id="metrics-info-close">✕</button>
+      <h3 style="margin-bottom:14px">Как считается итоговая оценка</h3>
+      <div class="score-formula-block">
+        <div class="score-formula">
+          Оценка = <span class="formula-frac"><span class="formula-num">Σ (балл<sub>i</sub> × вес<sub>i</sub>)</span><span class="formula-den">Σ вес<sub>i</sub></span></span> × 10
+        </div>
+      </div>
+      <p style="font-size:13px;color:#64748b;margin:14px 0 10px">AI оценивает кандидата по каждой метрике от 0 до 10, затем считается взвешенное среднее:</p>
+      <table class="formula-example">
+        <thead>
+          <tr><th>Метрика</th><th>Балл</th><th>Вес</th><th>Вклад</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>React / Next.js</td><td>9</td><td>7.5</td><td>67.5</td></tr>
+          <tr><td>TypeScript</td><td>6</td><td>6.0</td><td>36.0</td></tr>
+          <tr><td>Тестирование</td><td>3</td><td>3.0</td><td>9.0</td></tr>
+          <tr><td>Продуктовое мышление</td><td>8</td><td>2.0</td><td>16.0</td></tr>
+          <tr class="formula-total"><td>Итого</td><td></td><td>18.5</td><td>128.5</td></tr>
+        </tbody>
+      </table>
+      <div class="formula-result">128.5 / 18.5 × 10 = <strong>69</strong> → «Подумать»</div>
+      <div class="formula-legend">
+        <div class="fl-row"><span class="fl-dot suitable"></span> <b>Подходит</b> — 80 и выше</div>
+        <div class="fl-row"><span class="fl-dot consider"></span> <b>Подумать</b> — 66–79</div>
+        <div class="fl-row"><span class="fl-dot reject"></span> <b>Отказ</b> — до 65</div>
+      </div>
+      <p style="font-size:12px;color:#94a3b8;margin-top:12px">Метрика с весом 0 отображается, но не влияет на итог.</p>
+    </div>
+  </div>
+
   <!-- Модалка с деталями кандидата -->
   <div id="modal-overlay" class="modal-overlay hidden">
     <div class="modal">
@@ -216,6 +274,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=16"></script>
+  <script src="/static/app.js?v=17"></script>
 </body>
 </html>

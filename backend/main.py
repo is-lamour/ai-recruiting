@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, Body
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
@@ -15,7 +15,7 @@ from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 from database import init_db, get_db, row_to_dict
-from ai import screen_resume, summarize_vacancy, generate_boolean_search
+from ai import screen_resume, summarize_vacancy, generate_boolean_search, generate_metrics
 
 app = FastAPI(title="HH Auto Screening")
 
@@ -96,6 +96,23 @@ def _generate_summary_bg(vacancy_id: int, description: str, api_key: Optional[st
         print(f"[summary bg error] vacancy_id={vacancy_id}: {e}")
 
 
+def _generate_metrics_bg(vacancy_id: int, description: str, api_key: Optional[str] = None):
+    """Генерирует метрики вакансии в фоне и сохраняет JSON в БД."""
+    try:
+        metrics = generate_metrics(description, api_key=api_key)
+        conn = get_db()
+        try:
+            conn.execute(
+                "UPDATE vacancies SET metrics = ? WHERE id = ?",
+                (json.dumps(metrics, ensure_ascii=False), vacancy_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as e:
+        print(f"[metrics bg error] vacancy_id={vacancy_id}: {e}")
+
+
 def _generate_boolean_search_bg(vacancy_id: int, description: str, api_key: Optional[str] = None):
     """Генерирует Boolean search в фоне и сохраняет JSON в БД."""
     try:
@@ -141,6 +158,7 @@ def create_vacancy(request: Request, data: VacancyCreate, background_tasks: Back
         vacancy_id = cur.lastrowid
         if not manual_req:
             background_tasks.add_task(_generate_summary_bg, vacancy_id, data.description, api_key)
+        background_tasks.add_task(_generate_metrics_bg, vacancy_id, data.description, api_key)
         row = conn.execute("SELECT * FROM vacancies WHERE id = ?", (vacancy_id,)).fetchone()
         return row_to_dict(row)
     finally:
@@ -160,6 +178,7 @@ def update_vacancy(vacancy_id: int, request: Request, data: VacancyCreate, backg
         conn.commit()
         if not manual_req:
             background_tasks.add_task(_generate_summary_bg, vacancy_id, data.description, api_key)
+        background_tasks.add_task(_generate_metrics_bg, vacancy_id, data.description, api_key)
         row = conn.execute("SELECT * FROM vacancies WHERE id = ?", (vacancy_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Не найдено")
@@ -207,6 +226,73 @@ def generate_boolean_for_vacancy(vacancy_id: int, request: Request, background_t
         vacancy["description"],
         api_key,
     )
+    return {"status": "generating"}
+
+
+@app.get("/api/vacancies/{vacancy_id}/metrics")
+def get_metrics(vacancy_id: int):
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT metrics FROM vacancies WHERE id = ?", (vacancy_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Вакансия не найдена")
+        raw = row["metrics"] or "[]"
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            return []
+    finally:
+        conn.close()
+
+
+@app.put("/api/vacancies/{vacancy_id}/metrics")
+def update_metrics(vacancy_id: int, metrics: list = Body(...)):
+    # Валидируем и нормализуем
+    clean = []
+    for item in metrics:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name", "")).strip()
+        if not name:
+            continue
+        try:
+            weight = float(item.get("weight", 5.0))
+            weight = max(0.0, min(10.0, round(weight * 2) / 2))
+        except (ValueError, TypeError):
+            weight = 5.0
+        clean.append({"name": name, "weight": weight})
+    conn = get_db()
+    try:
+        conn.execute(
+            "UPDATE vacancies SET metrics = ? WHERE id = ?",
+            (json.dumps(clean, ensure_ascii=False), vacancy_id),
+        )
+        conn.commit()
+        return clean
+    finally:
+        conn.close()
+
+
+@app.post("/api/vacancies/{vacancy_id}/generate-metrics")
+def generate_metrics_for_vacancy(vacancy_id: int, request: Request, background_tasks: BackgroundTasks):
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT * FROM vacancies WHERE id = ?", (vacancy_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Вакансия не найдена")
+        vacancy = row_to_dict(row)
+    finally:
+        conn.close()
+
+    conn = get_db()
+    try:
+        conn.execute("UPDATE vacancies SET metrics = '[]' WHERE id = ?", (vacancy_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+    api_key = _get_gemini_key(request)
+    background_tasks.add_task(_generate_metrics_bg, vacancy_id, vacancy["description"], api_key)
     return {"status": "generating"}
 
 
@@ -295,7 +381,12 @@ def screen_candidate(request: Request, data: CandidateScreen):
             raise HTTPException(status_code=404, detail="Вакансия не найдена")
 
         requirements = vacancy["requirements"] or vacancy["description"][:500]
-        result = screen_resume(requirements, data.resume_text, api_key=_get_gemini_key(request))
+        raw_metrics = vacancy["metrics"] if "metrics" in vacancy.keys() else "[]"
+        try:
+            metrics = json.loads(raw_metrics or "[]") if isinstance(raw_metrics, str) else (raw_metrics or [])
+        except Exception:
+            metrics = []
+        result = screen_resume(requirements, data.resume_text, api_key=_get_gemini_key(request), metrics=metrics or None)
 
         try:
             cur = conn.execute(
