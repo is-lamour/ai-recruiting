@@ -117,6 +117,115 @@ h1 { font-size: 18px; font-weight: 700; color: var(--text); }
   padding-top: 10px;
 }
 
+/* ── Boolean search ──────────────────────────────────────────────────────── */
+.boolean-section {
+  margin-top: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.boolean-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.boolean-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.boolean-generating {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 8px 0;
+}
+
+.boolean-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+.boolean-queries {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.boolean-query-block {
+  display: grid;
+  grid-template-columns: 64px 1fr auto;
+  align-items: start;
+  gap: 8px;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.boolean-query-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+  align-self: center;
+}
+.boolean-query-label.wide   { background: #dbeafe; color: #1d4ed8; }
+.boolean-query-label.medium { background: #fef3c7; color: #92400e; }
+.boolean-query-label.narrow { background: #dcfce7; color: #166534; }
+
+.boolean-query-text {
+  font-size: 12px;
+  font-family: "Courier New", Courier, monospace;
+  color: var(--text);
+  line-height: 1.5;
+  word-break: break-word;
+  padding-top: 2px;
+}
+
+.btn-copy {
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  color: var(--text-muted);
+  white-space: nowrap;
+  transition: background .15s, color .15s;
+  align-self: center;
+}
+.btn-copy:hover { background: var(--text); color: #fff; }
+
+.boolean-comment {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  border-left: 3px solid var(--border);
+  padding-left: 8px;
+}
+
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
 .vacancy-desc-wrap pre {
   font-family: inherit;
   font-size: 13px;

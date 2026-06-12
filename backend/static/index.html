@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>HH Автоскрининг</title>
-  <link rel="stylesheet" href="/static/style.css?v=2">
+  <link rel="stylesheet" href="/static/style.css?v=3">
 </head>
 <body>
 
@@ -52,12 +52,45 @@
       </div>
       <div class="vacancy-info-actions">
         <button class="btn btn-ghost btn-sm" id="btn-toggle-desc">▾ Описание</button>
+        <button class="btn btn-ghost btn-sm" id="btn-toggle-boolean">⚡ Boolean</button>
         <button class="btn btn-ghost btn-sm" id="btn-edit-vacancy">✏️ Изменить</button>
         <button class="btn btn-danger-sm" id="btn-delete-vacancy">🗑</button>
       </div>
     </div>
     <div id="vp-desc-wrap" class="vacancy-desc-wrap hidden">
       <pre id="vp-description"></pre>
+    </div>
+
+    <!-- Boolean search секция -->
+    <div id="boolean-section" class="boolean-section hidden">
+      <div class="boolean-header">
+        <span class="boolean-title">Boolean Search для HH</span>
+        <button class="btn btn-ghost btn-sm" id="btn-regen-boolean">↺ Перегенерировать</button>
+      </div>
+      <div id="boolean-generating" class="boolean-generating hidden">
+        <span class="spinner"></span> Генерируем запросы...
+      </div>
+      <div id="boolean-result" class="boolean-result hidden">
+        <div class="boolean-meta" id="boolean-meta"></div>
+        <div class="boolean-queries">
+          <div class="boolean-query-block">
+            <div class="boolean-query-label wide">Широкий</div>
+            <div class="boolean-query-text" id="bq-wide"></div>
+            <button class="btn-copy" onclick="copyBoolean('bq-wide')">Скопировать</button>
+          </div>
+          <div class="boolean-query-block">
+            <div class="boolean-query-label medium">Средний</div>
+            <div class="boolean-query-text" id="bq-medium"></div>
+            <button class="btn-copy" onclick="copyBoolean('bq-medium')">Скопировать</button>
+          </div>
+          <div class="boolean-query-block">
+            <div class="boolean-query-label narrow">Узкий</div>
+            <div class="boolean-query-text" id="bq-narrow"></div>
+            <button class="btn-copy" onclick="copyBoolean('bq-narrow')">Скопировать</button>
+          </div>
+        </div>
+        <div class="boolean-comment" id="boolean-comment"></div>
+      </div>
     </div>
   </div>
 
@@ -183,6 +216,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=15"></script>
+  <script src="/static/app.js?v=16"></script>
 </body>
 </html>

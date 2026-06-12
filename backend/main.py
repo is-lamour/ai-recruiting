@@ -15,7 +15,7 @@ from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 from database import init_db, get_db, row_to_dict
-from ai import screen_resume, summarize_vacancy
+from ai import screen_resume, summarize_vacancy, generate_boolean_search
 
 app = FastAPI(title="HH Auto Screening")
 
@@ -96,6 +96,23 @@ def _generate_summary_bg(vacancy_id: int, description: str, api_key: Optional[st
         print(f"[summary bg error] vacancy_id={vacancy_id}: {e}")
 
 
+def _generate_boolean_search_bg(vacancy_id: int, description: str, api_key: Optional[str] = None):
+    """Генерирует Boolean search в фоне и сохраняет JSON в БД."""
+    try:
+        result = generate_boolean_search(description, api_key=api_key)
+        conn = get_db()
+        try:
+            conn.execute(
+                "UPDATE vacancies SET boolean_search = ? WHERE id = ?",
+                (json.dumps(result, ensure_ascii=False), vacancy_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as e:
+        print(f"[boolean_search bg error] vacancy_id={vacancy_id}: {e}")
+
+
 # ── Vacancies ─────────────────────────────────────────────────────────────────
 
 @app.get("/api/vacancies")
@@ -161,6 +178,36 @@ def delete_vacancy(vacancy_id: int):
         return {"status": "deleted"}
     finally:
         conn.close()
+
+
+@app.post("/api/vacancies/{vacancy_id}/generate-boolean")
+def generate_boolean_for_vacancy(vacancy_id: int, request: Request, background_tasks: BackgroundTasks):
+    """Запускает генерацию Boolean search для вакансии в фоне."""
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT * FROM vacancies WHERE id = ?", (vacancy_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Вакансия не найдена")
+        vacancy = row_to_dict(row)
+    finally:
+        conn.close()
+
+    # Сбрасываем текущий результат, чтобы фронт знал — генерация началась
+    conn = get_db()
+    try:
+        conn.execute("UPDATE vacancies SET boolean_search = '' WHERE id = ?", (vacancy_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+    api_key = _get_gemini_key(request)
+    background_tasks.add_task(
+        _generate_boolean_search_bg,
+        vacancy_id,
+        vacancy["description"],
+        api_key,
+    )
+    return {"status": "generating"}
 
 
 @app.get("/api/vacancies/{vacancy_id}/screened-urls")

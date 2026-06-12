@@ -15,6 +15,7 @@ let activeFilter = "all";
 let activeSort = "score_desc";
 let editingVacancyId = null;
 let summaryPollTimer = null;
+let booleanPollTimer = null;
 let scoreMin = 0;
 let scoreMax = 100;
 let selectedIds = new Set();
@@ -92,6 +93,18 @@ function showVacancyPanel(v) {
   }
   document.getElementById("vp-description").textContent = v.description || "";
   panel.classList.remove("hidden");
+
+  // Boolean: показываем секцию если уже сгенерировано
+  const boolSection = document.getElementById("boolean-section");
+  if (v.boolean_search) {
+    boolSection.classList.remove("hidden");
+    renderBooleanResult(v.boolean_search);
+    document.getElementById("btn-regen-boolean").disabled = false;
+  } else {
+    boolSection.classList.add("hidden");
+    document.getElementById("boolean-result").classList.add("hidden");
+    document.getElementById("boolean-generating").classList.add("hidden");
+  }
 }
 
 // ── Summary polling ───────────────────────────────────────────────────────────
@@ -116,6 +129,95 @@ function startSummaryPoll(vacancyId) {
 
 function stopSummaryPoll() {
   if (summaryPollTimer) { clearInterval(summaryPollTimer); summaryPollTimer = null; }
+}
+
+// ── Boolean search ────────────────────────────────────────────────────────────
+
+async function generateBoolean() {
+  if (!currentVacancyId) return;
+  const btn = document.getElementById("btn-regen-boolean");
+  btn.disabled = true;
+
+  document.getElementById("boolean-section").classList.remove("hidden");
+  document.getElementById("boolean-result").classList.add("hidden");
+  document.getElementById("boolean-generating").classList.remove("hidden");
+
+  try {
+    await fetch(`${API}/api/vacancies/${currentVacancyId}/generate-boolean`, {
+      method: "POST",
+      headers: apiHeaders(),
+    });
+    startBooleanPoll(currentVacancyId);
+  } catch {
+    document.getElementById("boolean-generating").classList.add("hidden");
+    btn.disabled = false;
+  }
+}
+
+function startBooleanPoll(vacancyId) {
+  stopBooleanPoll();
+  booleanPollTimer = setInterval(async () => {
+    if (currentVacancyId !== vacancyId) { stopBooleanPoll(); return; }
+    try {
+      const res = await fetch(`${API}/api/vacancies`);
+      const vacancies = await res.json();
+      const v = vacancies.find(x => x.id === vacancyId);
+      if (v && v.boolean_search) {
+        allVacancies = vacancies;
+        currentVacancy = v;
+        renderBooleanResult(v.boolean_search);
+        stopBooleanPoll();
+        document.getElementById("btn-regen-boolean").disabled = false;
+      }
+    } catch { /* ignore */ }
+  }, 2000);
+}
+
+function stopBooleanPoll() {
+  if (booleanPollTimer) { clearInterval(booleanPollTimer); booleanPollTimer = null; }
+}
+
+function renderBooleanResult(rawJson) {
+  let data;
+  try { data = typeof rawJson === "string" ? JSON.parse(rawJson) : rawJson; } catch { return; }
+
+  document.getElementById("boolean-generating").classList.add("hidden");
+
+  if (data.position || data.stack) {
+    const meta = [];
+    if (data.position) meta.push(`<b>Должность:</b> ${escHtml(data.position)}`);
+    if (data.stack)    meta.push(`<b>Стек:</b> ${escHtml(data.stack)}`);
+    document.getElementById("boolean-meta").innerHTML = meta.join(" &nbsp;|&nbsp; ");
+  } else {
+    document.getElementById("boolean-meta").innerHTML = "";
+  }
+
+  document.getElementById("bq-wide").textContent   = data.wide   || "";
+  document.getElementById("bq-medium").textContent = data.medium || "";
+  document.getElementById("bq-narrow").textContent = data.narrow || "";
+
+  const commentEl = document.getElementById("boolean-comment");
+  if (data.comment) {
+    commentEl.textContent = data.comment;
+    commentEl.classList.remove("hidden");
+  } else {
+    commentEl.classList.add("hidden");
+  }
+
+  document.getElementById("boolean-result").classList.remove("hidden");
+}
+
+function copyBoolean(elementId) {
+  const text = document.getElementById(elementId)?.textContent || "";
+  if (!text) return;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.querySelector(`[onclick="copyBoolean('${elementId}')"]`);
+    if (btn) {
+      const orig = btn.textContent;
+      btn.textContent = "Скопировано!";
+      setTimeout(() => { btn.textContent = orig; }, 1500);
+    }
+  });
 }
 
 // ── Vacancy CRUD ──────────────────────────────────────────────────────────────
@@ -229,6 +331,7 @@ async function deleteVacancy() {
   if (!confirm(`Удалить вакансию «${currentVacancy.title}» и всех её кандидатов?`)) return;
 
   stopSummaryPoll();
+  stopBooleanPoll();
   await fetch(`${API}/api/vacancies/${currentVacancy.id}`, { method: "DELETE" });
   currentVacancyId = null;
   currentVacancy = null;
@@ -566,6 +669,7 @@ function setupListeners() {
   document.getElementById("vacancy-select").addEventListener("change", async e => {
     const id = e.target.value;
     stopSummaryPoll();
+    stopBooleanPoll();
     if (id) {
       await selectVacancy(parseInt(id));
     } else {
@@ -594,6 +698,17 @@ function setupListeners() {
     const hidden = wrap.classList.toggle("hidden");
     btn.textContent = hidden ? "▾ Описание" : "▴ Описание";
   });
+
+  document.getElementById("btn-toggle-boolean").addEventListener("click", () => {
+    const section = document.getElementById("boolean-section");
+    const wasHidden = section.classList.contains("hidden");
+    section.classList.toggle("hidden");
+    if (wasHidden && currentVacancy && !currentVacancy.boolean_search) {
+      generateBoolean();
+    }
+  });
+
+  document.getElementById("btn-regen-boolean").addEventListener("click", generateBoolean);
 
   document.querySelectorAll(".filter-btn").forEach(btn => {
     btn.addEventListener("click", async () => {
