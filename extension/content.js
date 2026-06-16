@@ -163,30 +163,30 @@ async function startScreening(vacancyId, maxPages) {
 
     saveProgress({ active: true, current: 0, total, skipped, vacancyId, name: "" });
 
-    for (const link of newLinks) {
+    const BATCH_SIZE = 3;
+    for (let i = 0; i < newLinks.length; i += BATCH_SIZE) {
       if (await isCancelled()) {
         console.log("[HH Screen] Остановлено пользователем");
         break;
       }
 
-      try {
-        const resumeData = await fetchResumeData(link.fetchUrl);
-
-        await bgPost("/api/screen", {
-          vacancy_id: vacancyId,
-          name: link.name || resumeData.name || "Кандидат",
-          hh_url: link.storeUrl,
-          resume_text: resumeData.text,
-        });
-
-        processed++;
-      } catch (e) {
-        console.warn("[HH Screen] Ошибка:", link.storeUrl, e.message);
-        errors++;
-      }
-
-      const name = link.name || "";
-      saveProgress({ active: true, current: processed + errors, total, skipped, vacancyId, name });
+      const batch = newLinks.slice(i, i + BATCH_SIZE);
+      await Promise.all(batch.map(async (link) => {
+        try {
+          const resumeData = await fetchResumeData(link.fetchUrl);
+          await bgPost("/api/screen", {
+            vacancy_id: vacancyId,
+            name: link.name || resumeData.name || "Кандидат",
+            hh_url: link.storeUrl,
+            resume_text: resumeData.text,
+          });
+          processed++;
+        } catch (e) {
+          console.warn("[HH Screen] Ошибка:", link.storeUrl, e.message);
+          errors++;
+        }
+        saveProgress({ active: true, current: processed + errors, total, skipped, vacancyId, name: link.name || "" });
+      }));
     }
 
   } catch (e) {
