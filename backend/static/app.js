@@ -16,6 +16,7 @@ let activeSort = "score_desc";
 let editingVacancyId = null;
 let summaryPollTimer = null;
 let booleanPollTimer = null;
+let rescreenPollTimer = null;
 let scoreMin = 0;
 let scoreMax = 100;
 let selectedIds = new Set();
@@ -60,6 +61,8 @@ async function selectVacancy(id) {
   selectedIds.clear();
   currentMetrics = [];
   stopMetricsPoll();
+  stopRescreenPoll();
+  hideRescreenProgress();
   document.getElementById("metrics-section").classList.add("hidden");
 
   // Сбросить активный фильтр на "Все"
@@ -744,6 +747,7 @@ function updateBulkPanel() {
   const inTrash = viewMode === "trash";
   document.getElementById("btn-bulk-to-reject").classList.toggle("hidden", inTrash);
   document.getElementById("btn-bulk-trash").classList.toggle("hidden", inTrash);
+  document.getElementById("btn-bulk-rescreen").classList.toggle("hidden", inTrash);
   document.getElementById("btn-empty-trash").classList.toggle("hidden", !inTrash);
 }
 
@@ -927,6 +931,19 @@ function setupListeners() {
   document.getElementById("btn-bulk-huntflow").addEventListener("click", bulkMarkForHuntflow);
   document.getElementById("btn-bulk-reject").addEventListener("click",   bulkMarkForReject);
   document.getElementById("btn-export").addEventListener("click",        exportToExcel);
+  document.getElementById("btn-rescreen-all").addEventListener("click", () => {
+    if (!currentVacancyId) return;
+    const n = allCandidates.filter(c => !c.is_trashed).length;
+    if (n === 0) { alert("Нет кандидатов для перескрининга"); return; }
+    if (!confirm(`Переоценить всех ${n} кандидатов по текущим метрикам?`)) return;
+    startRescreen(null);
+  });
+  document.getElementById("btn-bulk-rescreen").addEventListener("click", () => {
+    const ids = [...selectedIds];
+    if (!ids.length) return;
+    if (!confirm(`Переоценить ${ids.length} выбранных кандидатов по текущим метрикам?`)) return;
+    startRescreen(ids);
+  });
   document.getElementById("btn-refresh").addEventListener("click", async () => {
     const btn = document.getElementById("btn-refresh");
     btn.textContent = "↻ Загрузка...";
@@ -1001,6 +1018,118 @@ function setupListeners() {
     localStorage.removeItem("geminiApiKey");
     document.getElementById("api-key-modal").classList.add("hidden");
   });
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+
+function showToast(msg, type = "success") {
+  const el = document.createElement("div");
+  el.className = `toast toast-${type}`;
+  el.textContent = msg;
+  document.body.appendChild(el);
+  requestAnimationFrame(() => el.classList.add("show"));
+  setTimeout(() => {
+    el.classList.remove("show");
+    setTimeout(() => el.remove(), 350);
+  }, 3500);
+}
+
+// ── Rescreen ──────────────────────────────────────────────────────────────────
+
+function stopRescreenPoll() {
+  if (rescreenPollTimer) { clearInterval(rescreenPollTimer); rescreenPollTimer = null; }
+}
+
+async function startRescreen(candidateIds) {
+  if (!currentVacancyId) return;
+
+  const body = candidateIds ? { candidate_ids: candidateIds } : {};
+  const expectedTotal = candidateIds ? candidateIds.length : allCandidates.length;
+
+  const res = await fetch(`${API}/api/vacancies/${currentVacancyId}/rescreen`, {
+    method: "POST",
+    headers: apiHeaders(),
+    body: JSON.stringify(body),
+  });
+
+  if (res.status === 409) {
+    showToast("Перескрининг уже запущен, подождите.", "warn");
+    return;
+  }
+  if (!res.ok) {
+    showToast("Не удалось запустить перескрининг", "error");
+    return;
+  }
+
+  const data = await res.json();
+  if (data.total === 0) { showToast("Нет кандидатов для перескрининга", "warn"); return; }
+
+  showRescreenProgress(0, data.total || expectedTotal);
+  startRescreenPoll(currentVacancyId, data.total || expectedTotal);
+}
+
+function showRescreenProgress(done, total) {
+  const wrap = document.getElementById("rescreen-progress");
+  const bar  = document.getElementById("rescreen-bar");
+  const pct  = document.getElementById("rescreen-progress-pct");
+  const txt  = document.getElementById("rescreen-progress-text");
+
+  wrap.classList.remove("hidden");
+  const p = total > 0 ? Math.round(done / total * 100) : 0;
+  bar.style.width = p + "%";
+  pct.textContent = p + "%";
+  txt.textContent = `Перескрининг: ${done} / ${total}`;
+}
+
+function hideRescreenProgress() {
+  document.getElementById("rescreen-progress").classList.add("hidden");
+}
+
+function startRescreenPoll(vacancyId, expectedTotal) {
+  stopRescreenPoll();
+  let lastDone = 0;
+  let staleCount = 0;
+
+  rescreenPollTimer = setInterval(async () => {
+    if (currentVacancyId !== vacancyId) { stopRescreenPoll(); hideRescreenProgress(); return; }
+    try {
+      const res = await fetch(`${API}/api/vacancies/${vacancyId}/rescreen/status`);
+      if (!res.ok) return;
+      const s = await res.json();
+
+      // Пока задача ещё не инициализировала прогресс — показываем ожидание
+      const total = s.total > 0 ? s.total : expectedTotal;
+      showRescreenProgress(s.done, total);
+
+      // Детектируем завершение: running=false И total>0
+      if (!s.running && s.total > 0) {
+        stopRescreenPoll();
+        hideRescreenProgress();
+        await refreshData();
+        const updated = s.done - s.errors;
+        if (s.errors > 0) {
+          showToast(`Перескрининг завершён: обновлено ${updated}, ошибок ${s.errors}`, "warn");
+        } else {
+          showToast(`✓ Перескрининг завершён: обновлено ${updated} кандидатов`);
+        }
+        return;
+      }
+
+      // Защита от зависания: если done не растёт 30 секунд — принудительно обновляем
+      if (s.done === lastDone) {
+        staleCount++;
+        if (staleCount >= 15) {
+          stopRescreenPoll();
+          hideRescreenProgress();
+          await refreshData();
+          showToast("Перескрининг завершён (таймаут)", "warn");
+        }
+      } else {
+        lastDone = s.done;
+        staleCount = 0;
+      }
+    } catch { /* ignore */ }
+  }, 2000);
 }
 
 // ── Utils ─────────────────────────────────────────────────────────────────────

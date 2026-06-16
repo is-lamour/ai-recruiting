@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>HH Автоскрининг</title>
-  <link rel="stylesheet" href="/static/style.css?v=3">
+  <link rel="stylesheet" href="/static/style.css?v=5">
 </head>
 <body>
 
@@ -204,6 +204,9 @@
           <button id="btn-bulk-trash-all" class="btn btn-ghost">
             🗑 В корзину (все «Отказ»)
           </button>
+          <button id="btn-rescreen-all" class="btn btn-ghost" title="Переоценить всех кандидатов по текущим метрикам">
+            ↺ Перескрининг всех
+          </button>
           <button id="btn-refresh" class="btn btn-ghost" title="Обновить данные">
             ↻ Обновить
           </button>
@@ -219,8 +222,21 @@
         <button class="btn btn-ghost"   id="btn-select-all">Выбрать всех</button>
         <button class="btn btn-danger"  id="btn-bulk-to-reject">✕ Отказать</button>
         <button class="btn btn-ghost"   id="btn-bulk-trash">🗑 В корзину</button>
+        <button class="btn btn-ghost"   id="btn-bulk-rescreen">↺ Перескрининг</button>
         <button class="btn btn-ghost"   id="btn-bulk-deselect">Снять выбор</button>
         <button class="btn btn-danger hidden" id="btn-empty-trash">🗑 Очистить корзину</button>
+      </div>
+
+      <!-- Прогресс перескрининга -->
+      <div id="rescreen-progress" class="rescreen-progress hidden">
+        <div class="rescreen-progress-inner">
+          <span class="spinner"></span>
+          <span id="rescreen-progress-text">Перескрининг...</span>
+          <div class="rescreen-bar-wrap">
+            <div class="rescreen-bar" id="rescreen-bar"></div>
+          </div>
+          <span id="rescreen-progress-pct">0%</span>
+        </div>
       </div>
 
       <!-- Список кандидатов -->
@@ -274,6 +290,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=17"></script>
+  <script src="/static/app.js?v=19"></script>
 </body>
 </html>

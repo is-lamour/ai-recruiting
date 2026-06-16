@@ -7,6 +7,7 @@ from typing import Optional
 import json
 import io
 import sqlite3
+import threading
 import requests as http_requests
 from pathlib import Path
 from bs4 import BeautifulSoup
@@ -16,6 +17,10 @@ from openpyxl.utils import get_column_letter
 
 from database import init_db, get_db, row_to_dict
 from ai import screen_resume, summarize_vacancy, generate_boolean_search, generate_metrics
+
+# in-memory progress store: vacancy_id → {total, done, errors, running}
+_rescreen_progress: dict[int, dict] = {}
+_rescreen_lock = threading.Lock()
 
 app = FastAPI(title="HH Auto Screening")
 
@@ -71,6 +76,10 @@ class StatusUpdate(BaseModel):
 class BulkAction(BaseModel):
     ids: list
     action: str  # "to_reject" | "delete"
+
+
+class RescreenRequest(BaseModel):
+    candidate_ids: Optional[list[int]] = None  # None = все кандидаты вакансии
 
 
 # ── Background tasks ──────────────────────────────────────────────────────────
@@ -745,6 +754,108 @@ def mark_for_reject(vacancy_id: int):
         return {"queued": count}
     finally:
         conn.close()
+
+
+@app.get("/api/vacancies/{vacancy_id}/rescreen/status")
+def rescreen_status(vacancy_id: int):
+    with _rescreen_lock:
+        prog = _rescreen_progress.get(vacancy_id)
+    if not prog:
+        return {"running": False, "total": 0, "done": 0, "errors": 0}
+    return prog
+
+
+def _rescreen_bg(vacancy_id: int, candidate_ids: list[int], api_key: Optional[str]):
+    conn = get_db()
+    try:
+        vacancy_row = conn.execute("SELECT * FROM vacancies WHERE id = ?", (vacancy_id,)).fetchone()
+        if not vacancy_row:
+            return
+        vacancy = row_to_dict(vacancy_row)
+        requirements = vacancy["requirements"] or vacancy["description"][:500]
+        try:
+            metrics = json.loads(vacancy.get("metrics") or "[]")
+        except Exception:
+            metrics = []
+
+        rows = conn.execute(
+            f"SELECT id, resume_text FROM candidates WHERE id IN ({','.join('?' * len(candidate_ids))}) AND vacancy_id = ?",
+            (*candidate_ids, vacancy_id),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    total = len(rows)
+    with _rescreen_lock:
+        _rescreen_progress[vacancy_id] = {"running": True, "total": total, "done": 0, "errors": 0}
+
+    for row in rows:
+        cid = row["id"]
+        resume_text = row["resume_text"] or ""
+        try:
+            result = screen_resume(requirements, resume_text, api_key=api_key, metrics=metrics or None)
+            conn = get_db()
+            try:
+                conn.execute(
+                    """UPDATE candidates
+                       SET score=?, category=?, ai_comment=?, questions=?, summary=?,
+                           pros=?, cons=?, score_breakdown=?
+                       WHERE id=?""",
+                    (
+                        result["score"],
+                        result["category"],
+                        result["comment"],
+                        json.dumps(result["questions"],            ensure_ascii=False),
+                        result.get("summary", ""),
+                        json.dumps(result.get("pros", []),         ensure_ascii=False),
+                        json.dumps(result.get("cons", []),         ensure_ascii=False),
+                        json.dumps(result.get("score_breakdown", []), ensure_ascii=False),
+                        cid,
+                    ),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            with _rescreen_lock:
+                _rescreen_progress[vacancy_id]["done"] += 1
+        except Exception as e:
+            print(f"[rescreen] candidate {cid} error: {e}")
+            with _rescreen_lock:
+                _rescreen_progress[vacancy_id]["errors"] += 1
+                _rescreen_progress[vacancy_id]["done"] += 1
+
+    with _rescreen_lock:
+        _rescreen_progress[vacancy_id]["running"] = False
+
+
+@app.post("/api/vacancies/{vacancy_id}/rescreen")
+def rescreen_candidates(vacancy_id: int, request: Request, data: RescreenRequest, background_tasks: BackgroundTasks):
+    conn = get_db()
+    try:
+        if not conn.execute("SELECT 1 FROM vacancies WHERE id = ?", (vacancy_id,)).fetchone():
+            raise HTTPException(status_code=404, detail="Вакансия не найдена")
+
+        if data.candidate_ids:
+            candidate_ids = data.candidate_ids
+        else:
+            rows = conn.execute(
+                "SELECT id FROM candidates WHERE vacancy_id = ? AND COALESCE(is_trashed, 0) = 0",
+                (vacancy_id,),
+            ).fetchall()
+            candidate_ids = [r["id"] for r in rows]
+    finally:
+        conn.close()
+
+    if not candidate_ids:
+        return {"status": "nothing_to_rescreen", "total": 0}
+
+    with _rescreen_lock:
+        if _rescreen_progress.get(vacancy_id, {}).get("running"):
+            raise HTTPException(status_code=409, detail="Перескрининг уже запущен")
+
+    api_key = _get_gemini_key(request)
+    background_tasks.add_task(_rescreen_bg, vacancy_id, candidate_ids, api_key)
+    return {"status": "started", "total": len(candidate_ids)}
 
 
 @app.post("/api/vacancies/{vacancy_id}/mark-for-huntflow")
