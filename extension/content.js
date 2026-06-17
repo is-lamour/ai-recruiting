@@ -126,11 +126,16 @@ async function diagnose() {
 
 // ── Скрининг ──────────────────────────────────────────────────────────────────
 
+class CaptchaError extends Error {
+  constructor() { super("captcha"); this.name = "CaptchaError"; }
+}
+
 async function startScreening(vacancyId, maxPages) {
   screeningActive = true;
   await resetCancel();
 
   let processed = 0, errors = 0, skipped = 0;
+  const captchaQueue = [];
 
   try {
     // Уже скринированные — пропускаем
@@ -163,7 +168,10 @@ async function startScreening(vacancyId, maxPages) {
 
     saveProgress({ active: true, current: 0, total, skipped, vacancyId, name: "" });
 
+    // Основной проход: батчи по 3 с stagger 400ms внутри батча
     const BATCH_SIZE = 3;
+    const STAGGER_MS = 400;
+
     for (let i = 0; i < newLinks.length; i += BATCH_SIZE) {
       if (await isCancelled()) {
         console.log("[HH Screen] Остановлено пользователем");
@@ -171,7 +179,8 @@ async function startScreening(vacancyId, maxPages) {
       }
 
       const batch = newLinks.slice(i, i + BATCH_SIZE);
-      await Promise.all(batch.map(async (link) => {
+      await Promise.all(batch.map(async (link, batchIndex) => {
+        if (batchIndex > 0) await sleep(batchIndex * STAGGER_MS);
         try {
           const resumeData = await fetchResumeData(link.fetchUrl);
           await bgPost("/api/screen", {
@@ -182,11 +191,41 @@ async function startScreening(vacancyId, maxPages) {
           });
           processed++;
         } catch (e) {
-          console.warn("[HH Screen] Ошибка:", link.storeUrl, e.message);
-          errors++;
+          if (e.message === "HH требует авторизации") {
+            console.warn("[HH Screen] Авторизация истекла:", link.storeUrl);
+            errors++;
+          } else {
+            console.warn("[HH Screen] Откладываем на повтор:", link.storeUrl, e.message);
+            captchaQueue.push(link);
+          }
         }
         saveProgress({ active: true, current: processed + errors, total, skipped, vacancyId, name: link.name || "" });
       }));
+    }
+
+    // Повторный проход для всех неудавшихся кандидатов — последовательно с большим интервалом
+    if (captchaQueue.length > 0 && !(await isCancelled())) {
+      console.log(`[HH Screen] Повторная обработка: ${captchaQueue.length} кандидатов`);
+      await sleep(4000);
+
+      for (const link of captchaQueue) {
+        if (await isCancelled()) break;
+        try {
+          const resumeData = await fetchResumeData(link.fetchUrl);
+          await bgPost("/api/screen", {
+            vacancy_id: vacancyId,
+            name: link.name || resumeData.name || "Кандидат",
+            hh_url: link.storeUrl,
+            resume_text: resumeData.text,
+          });
+          processed++;
+        } catch (e) {
+          console.warn("[HH Screen] Повтор не удался:", link.storeUrl, e.message);
+          errors++;
+        }
+        saveProgress({ active: true, current: processed + errors, total, skipped, vacancyId, name: link.name || "" });
+        await sleep(3500);
+      }
     }
 
   } catch (e) {
@@ -333,6 +372,16 @@ async function fetchResumeData(url) {
 
   if (doc.querySelector('form[action*="login"]') || doc.title.includes("Вход")) {
     throw new Error("HH требует авторизации");
+  }
+
+  const bodyText = doc.body?.textContent || "";
+  if (
+    /не[\s ]+робот/i.test(doc.title) ||
+    /captcha/i.test(doc.title) ||
+    doc.querySelector('form[action*="captcha"]') ||
+    /подтвердите.*не[\s ]+робот/i.test(bodyText)
+  ) {
+    throw new CaptchaError();
   }
 
   return extractResumeData(doc);
