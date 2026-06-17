@@ -398,6 +398,59 @@ function copyBoolean(elementId) {
   });
 }
 
+function buildCopyText(c) {
+  const cat = c.category || "pending";
+  const catRu = catLabel(cat);
+  const pros = Array.isArray(c.pros) ? c.pros : [];
+  const cons = Array.isArray(c.cons) ? c.cons : [];
+  const breakdown = Array.isArray(c.score_breakdown) ? c.score_breakdown : [];
+
+  const lines = [];
+  lines.push(`📋 ${c.name || "Кандидат"}`);
+  lines.push(`Оценка: ${c.score ?? "—"}/100 (${catRu})`);
+  if (c.hh_url) lines.push(`Ссылка: ${c.hh_url}`);
+
+  if (c.ai_comment) {
+    lines.push("");
+    lines.push(`💬 Комментарий:`);
+    lines.push(c.ai_comment);
+  }
+
+  if (pros.length || cons.length) {
+    lines.push("");
+    const maxLen = Math.max(pros.length, cons.length);
+    lines.push("✅ Плюсы:");
+    pros.forEach(p => lines.push(`  • ${p}`));
+    if (!pros.length) lines.push("  —");
+    lines.push("❌ Минусы:");
+    cons.forEach(c => lines.push(`  • ${c}`));
+    if (!cons.length) lines.push("  —");
+  }
+
+  if (breakdown.length) {
+    lines.push("");
+    lines.push("📊 Разбивка по критериям:");
+    breakdown.forEach(b => {
+      const bar = "█".repeat(Math.round(b.score)) + "░".repeat(10 - Math.round(b.score));
+      lines.push(`  ${b.criterion}: ${b.score}/10  ${bar}`);
+      if (b.note) lines.push(`    → ${b.note}`);
+    });
+  }
+
+  return lines.join("\n");
+}
+
+function copyCandidateCard(id, btn) {
+  const c = allCandidates.find(x => x.id === id);
+  if (!c) return;
+  const text = buildCopyText(c);
+  navigator.clipboard.writeText(text).then(() => {
+    const orig = btn.textContent;
+    btn.textContent = "Скопировано!";
+    setTimeout(() => { btn.textContent = orig; }, 1500);
+  });
+}
+
 // ── Metrics ───────────────────────────────────────────────────────────────────
 
 let currentMetrics = [];
@@ -845,6 +898,7 @@ function buildCard(c) {
         <button class="resume-toggle" data-id="${c.id}">▸ Полное резюме</button>
         <div class="resume-full hidden" id="rt-${c.id}">${formatResumeHtml(c.resume_text)}</div>
       ` : ""}
+      <button class="btn-copy-card" onclick="copyCandidateCard(${c.id}, this)" title="Скопировать оценку для отправки">📋 Копировать</button>
     </div>
     <div class="card-actions">${buildActionButtons(c)}</div>
   </div>`;
