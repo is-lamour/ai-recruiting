@@ -420,7 +420,7 @@ function extractResumeData(doc) {
     ).replace(/\s+/g, " ").trim();
   }
 
-  if (text.length > 10000) text = text.slice(0, 10000) + "...";
+  if (text.length > 30000) text = text.slice(0, 30000);
   return { name, text };
 }
 

@@ -1,5 +1,177 @@
 const API = "";  // same origin
 
+const _MON = "Янв|Фев|Мар|Апр|Май|Июн|Июл|Авг|Сен|Окт|Ноя|Дек";
+const _MON_RX = new RegExp(`(?:${_MON})\\s+\\d{4}`);
+const _SECTION_HEADERS = ["Опыт работы","Навыки","Образование","Языки","Обо мне","Рекомендации","Сопроводительное письмо"];
+
+// Маркеры конца резюме (всё начиная с них — мусор)
+const _RESUME_END_MARKERS = [
+  "КомментарииИстория",
+  "Комментарии\nИстория",
+  "О компанииНаши вакансии",
+  "О компании\nНаши вакансии",
+  "ДополнительноЖелательное время",
+  "new Image().src",
+  "var _tmr",
+  "window.ym(",
+  "© 20",
+];
+
+// Первый реальный раздел резюме — с него начинается контент
+const _CONTENT_START_MARKERS = [
+  "Сопроводительное письмо",
+  "Опыт работы",
+  "ЗП ожид",
+  "Желаемая должность",
+  "Специализации:",
+];
+
+function formatResumeHtml(raw) {
+  if (!raw) return "";
+
+  let t = raw;
+
+  // 1. Убираем JS-мусор в самом начале (window.globalVars и т.п.)
+  t = t.replace(/^[\s\S]*?(?=\n)/u, s => /window\.|var |function /.test(s) ? "" : s).trim();
+
+  // 2. Вырезаем блок контактов HH: от "Контакты" до первого раздела резюме
+  // Паттерн: "Контакты" → телефоны/ссылки → "Написать в чат" / "Показать все контакты"
+  t = t.replace(/Контакты[\s\S]{0,300}?(?=Сопроводительное письмо|ЗП ожид|Специализации:|Тип занятости|Опыт работы:|Желаемая должность)/g, "");
+
+  // 3. Если осталась навигация "Пожаловаться на отклик" — режем до неё и берём после
+  const navIdx = t.indexOf("Пожаловаться на отклик");
+  if (navIdx !== -1 && navIdx < t.length * 0.25) {
+    t = t.slice(navIdx + "Пожаловаться на отклик".length);
+  }
+
+  // 4. Убираем хвост — служебные данные и JS-трекеры
+  for (const marker of _RESUME_END_MARKERS) {
+    const idx = t.indexOf(marker);
+    if (idx !== -1 && idx > t.length * 0.2) {
+      t = t.slice(0, idx);
+      break;
+    }
+  }
+  t = t.trim();
+
+  // 5. Нормализуем пробелы, сохраняя переносы
+  t = t.replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n");
+
+  // 6. Вставляем разрывы перед ключевыми полями шапки
+  const _HEADER_BREAKS = [
+    "Сопроводительное письмо",
+    "Специализации:",
+    "Тип занятости:",
+    "Формат работы:",
+    "Опыт работы:",
+    "Обновлено ",
+    "Активно ищет работу",
+    "Не ищет работу",
+    "ЗП ожид",
+  ];
+  _HEADER_BREAKS.forEach(s => {
+    t = t.replace(new RegExp(`([^\\n])(${s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "g"), "$1\n\n$2");
+  });
+
+  // 7. Вставляем разрывы перед датами опыта
+  t = t.replace(new RegExp(`([^\\n])((?:${_MON})\\s+\\d{4})`, "g"), "$1\n\n$2");
+
+  // 8. Вставляем разрывы перед заголовками секций
+  _SECTION_HEADERS.forEach(s => {
+    t = t.replace(new RegExp(`([^\\n])(${s})(?=\\s|$)`, "g"), "$1\n\n$2");
+  });
+
+  const blocks = t.split(/\n\n+/).map(b => b.trim()).filter(Boolean);
+  if (!blocks.length) return `<div class="rv-line">${escHtml(t)}</div>`;
+
+  let html = "";
+
+  blocks.forEach((block, idx) => {
+    const lines = block.split(/\n/).map(l => l.trim()).filter(Boolean);
+    if (!lines.length) return;
+
+    const first = lines[0];
+
+    // ── Заголовок секции ──────────────────────────────────────────────────
+    if (_SECTION_HEADERS.includes(first)) {
+      html += `<div class="rv-section-head">${escHtml(first)}</div>`;
+      renderLines(lines.slice(1));
+      return;
+    }
+
+    // ── Блок опыта (начинается с даты) ───────────────────────────────────
+    if (_MON_RX.test(first) || /^\d{4}/.test(first)) {
+      html += `<div class="rv-exp-block">`;
+      // первые 1-3 строки — мета: дата, компания, должность
+      let bodyStart = 0;
+      lines.forEach((line, j) => {
+        if (j === 0) {
+          html += `<div class="rv-exp-date">${escHtml(line)}</div>`;
+          bodyStart = 1;
+        } else if (j <= 2 && !line.startsWith("-") && line.length < 120) {
+          html += `<div class="rv-exp-company">${escHtml(line)}</div>`;
+          bodyStart = j + 1;
+        } else {
+          html += line.startsWith("-")
+            ? `<div class="rv-bullet">• ${escHtml(line.slice(1).trim())}</div>`
+            : `<div class="rv-line">${escHtml(line)}</div>`;
+        }
+      });
+      html += `</div>`;
+      return;
+    }
+
+    // ── Первый блок — личная информация ──────────────────────────────────
+    if (idx === 0) {
+      html += `<div class="rv-personal-block">`;
+      html += `<div class="rv-candidate-name">${escHtml(first)}</div>`;
+      lines.slice(1).forEach(l => {
+        // демография (пол, возраст, дата рождения)
+        if (/^(Мужчина|Женщина)/.test(l)) {
+          html += `<div class="rv-personal-demo">${escHtml(l)}</div>`;
+        // геолокация
+        } else if (/готов|переезд|командиров|км\)|Almaty|Алматы|Москв|Санкт/i.test(l)) {
+          html += `<div class="rv-personal-geo">${escHtml(l)}</div>`;
+        // статус поиска
+        } else if (/ищет работу|Не ищет|Обновлено/.test(l)) {
+          html += `<div class="rv-personal-status">${escHtml(l)}</div>`;
+        // желаемая должность / зп
+        } else if (/₽|тенге|тыс\.|000 |на руки|ожид/.test(l)) {
+          html += `<div class="rv-personal-salary">${escHtml(l)}</div>`;
+        } else {
+          html += `<div class="rv-personal-line">${escHtml(l)}</div>`;
+        }
+      });
+      html += `</div>`;
+      return;
+    }
+
+    // ── Навыки (короткие слова, много штук) ──────────────────────────────
+    const allShort = lines.every(l => !l.startsWith("-") && l.length < 60);
+    if (allShort && lines.length > 3) {
+      html += `<div class="rv-skills">`;
+      lines.forEach(l => { html += `<span class="rv-skill-tag">${escHtml(l)}</span>`; });
+      html += `</div>`;
+      return;
+    }
+
+    // ── Обычный блок ──────────────────────────────────────────────────────
+    html += `<div class="rv-generic-block">`;
+    renderLines(lines);
+    html += `</div>`;
+
+    function renderLines(ls) {
+      ls.forEach(l => {
+        html += l.startsWith("-")
+          ? `<div class="rv-bullet">• ${escHtml(l.slice(1).trim())}</div>`
+          : `<div class="rv-line">${escHtml(l)}</div>`;
+      });
+    }
+  });
+
+  return html;
+}
+
 function getApiKey() { return localStorage.getItem("geminiApiKey") || ""; }
 function apiHeaders(extra = {}) {
   const h = { "Content-Type": "application/json", ...extra };
@@ -589,6 +761,13 @@ function renderCandidates() {
       btn.textContent = hidden ? "▸ Разбивка баллов" : "▾ Разбивка баллов";
     });
   });
+  list.querySelectorAll(".resume-toggle").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const rt = document.getElementById(`rt-${btn.dataset.id}`);
+      const hidden = rt.classList.toggle("hidden");
+      btn.textContent = hidden ? "▸ Полное резюме" : "▾ Полное резюме";
+    });
+  });
 }
 
 function buildCard(c) {
@@ -650,8 +829,10 @@ function buildCard(c) {
         ${statusLabel ? `<span class="status-badge">${escHtml(statusLabel)}</span>` : ""}
         ${c.created_at ? `<span class="screened-at">🕐 ${formatDateTime(c.created_at)}</span>` : ""}
       </div>
-      ${c.summary ? `<p class="resume-summary">${escHtml(c.summary)}</p>` : ""}
-      <p class="ai-comment">${escHtml(c.ai_comment || "")}</p>
+      <div class="ai-assessment">
+        ${c.summary ? `<p class="resume-summary">${escHtml(c.summary)}</p>` : ""}
+        ${c.ai_comment ? `<p class="ai-comment">${escHtml(c.ai_comment)}</p>` : ""}
+      </div>
       ${pcHtml}
       ${breakdownHtml}
       ${questions.length ? `
@@ -659,6 +840,10 @@ function buildCard(c) {
         <ul class="questions-list hidden" id="q-${c.id}">
           ${questions.map(q => `<li>${escHtml(q)}</li>`).join("")}
         </ul>
+      ` : ""}
+      ${c.resume_text ? `
+        <button class="resume-toggle" data-id="${c.id}">▸ Полное резюме</button>
+        <div class="resume-full hidden" id="rt-${c.id}">${formatResumeHtml(c.resume_text)}</div>
       ` : ""}
     </div>
     <div class="card-actions">${buildActionButtons(c)}</div>

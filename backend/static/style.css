@@ -470,7 +470,7 @@ main { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
 .score-badge.pending  { background: var(--pending-bg);  color: var(--pending); }
 
 /* Card body */
-.card-body {}
+.card-body { min-width: 0; overflow: hidden; }
 .card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
 
 .candidate-name {
@@ -508,22 +508,159 @@ main { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
   white-space: nowrap;
 }
 
+.ai-assessment {
+  margin-bottom: 8px;
+}
+
 .resume-summary {
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 600;
   color: var(--text);
-  background: var(--bg);
-  border-left: 3px solid var(--border);
-  padding: 4px 8px;
-  border-radius: 4px;
-  margin-bottom: 6px;
-  font-family: monospace;
   line-height: 1.4;
+  margin-bottom: 4px;
 }
 
 .ai-comment {
   font-size: 13px;
   color: var(--text-muted);
   line-height: 1.5;
+  margin: 0;
+}
+
+.resume-toggle {
+  font-size: 12px;
+  color: #0ea5e9;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  display: block;
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+.resume-toggle:hover { text-decoration: underline; }
+
+.resume-full {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 8px;
+  margin-bottom: 8px;
+  padding: 14px 16px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border-left: 3px solid #0ea5e9;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
+  max-height: 480px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Личная информация */
+.rv-personal-block {
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.rv-candidate-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 3px;
+}
+.rv-personal-demo {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  margin-bottom: 1px;
+}
+.rv-personal-geo {
+  font-size: 12px;
+  color: #64748b;
+  margin-bottom: 3px;
+}
+.rv-personal-status {
+  font-size: 11.5px;
+  color: #16a34a;
+  font-weight: 500;
+  margin-bottom: 3px;
+}
+.rv-personal-salary {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-top: 4px;
+}
+.rv-personal-line {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+/* Заголовок секции */
+.rv-section-head {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: #94a3b8;
+  margin: 14px 0 6px;
+}
+
+/* Блок опыта */
+.rv-exp-block {
+  margin-bottom: 12px;
+  padding-left: 10px;
+  border-left: 2px solid #e2e8f0;
+}
+.rv-exp-date {
+  font-size: 11.5px;
+  color: #64748b;
+  font-weight: 600;
+  margin-bottom: 1px;
+}
+.rv-exp-company {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+/* Буллеты */
+.rv-bullet {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  padding-left: 10px;
+  margin-bottom: 2px;
+}
+
+/* Обычная строка */
+.rv-line {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-bottom: 2px;
+}
+
+/* Навыки — теги */
+.rv-skills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 8px;
+}
+.rv-skill-tag {
+  font-size: 11.5px;
+  background: #e0f2fe;
+  color: #0369a1;
+  border-radius: 4px;
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+
+.rv-generic-block {
   margin-bottom: 8px;
 }
 
@@ -534,6 +671,9 @@ main { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
   background: none;
   border: none;
   padding: 0;
+  display: block;
+  margin-top: 4px;
+  margin-bottom: 4px;
 }
 .questions-toggle:hover { text-decoration: underline; }
 
@@ -737,8 +877,9 @@ main { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
   background: none;
   border: none;
   padding: 0;
-  margin-bottom: 4px;
   display: block;
+  margin-top: 4px;
+  margin-bottom: 4px;
 }
 .breakdown-toggle:hover { text-decoration: underline; }
 
