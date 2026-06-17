@@ -431,10 +431,16 @@ function buildCopyText(c) {
     lines.push("");
     lines.push("📊 Разбивка по критериям:");
     breakdown.forEach(b => {
-      const bar = "█".repeat(Math.round(b.score)) + "░".repeat(10 - Math.round(b.score));
-      lines.push(`  ${b.criterion}: ${b.score}/10  ${bar}`);
+      lines.push(`  ${b.criterion}: ${b.score}/10`);
       if (b.note) lines.push(`    → ${b.note}`);
     });
+  }
+
+  const questions = Array.isArray(c.questions) ? c.questions : [];
+  if (questions.length) {
+    lines.push("");
+    lines.push("❓ Вопросы по пробелам:");
+    questions.forEach(q => lines.push(`  • ${q}`));
   }
 
   return lines.join("\n");

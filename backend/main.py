@@ -574,6 +574,7 @@ def export_candidates(vacancy_id: int):
     }
     HEADER_FILL = PatternFill("solid", fgColor="1E293B")
     HEADER_FONT = Font(bold=True, color="FFFFFF")
+    SECTION_FILL = PatternFill("solid", fgColor="334155")
     WRAP = Alignment(wrap_text=True, vertical="top")
     thin = Side(style="thin", color="E2E8F0")
     BORDER = Border(left=thin, right=thin, top=thin, bottom=thin)
@@ -584,72 +585,134 @@ def export_candidates(vacancy_id: int):
         "rejected": "Отказ отправлен", "huntflow_sent": "Отправлен в HF",
     }
 
+    # 13 колонок; резюме — последняя
     COLUMNS = [
-        ("Балл",              8),
-        ("Категория",        12),
-        ("Имя",              24),
-        ("Статус",           16),
-        ("Краткое резюме",   40),
-        ("Плюсы",            36),
-        ("Минусы",           36),
-        ("Комментарий AI",   44),
+        ("Балл",                 8),
+        ("Категория",           12),
+        ("Имя",                 24),
+        ("Статус",              14),
+        ("Дата скрининга",      16),
+        ("Краткое резюме",      40),
+        ("Плюсы",               36),
+        ("Минусы",              36),
+        ("Комментарий AI",      44),
+        ("Оценка по критериям", 50),
         ("Вопросы по пробелам", 50),
-        ("Ссылка",           36),
+        ("Ссылка",              36),
+        ("Резюме",              80),
     ]
+    NCOLS = len(COLUMNS)
+    last_col_letter = get_column_letter(NCOLS)
 
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = vacancy["title"][:30]
 
-    # ── Шапка с названием вакансии ────────────────────────────────────────────
-    ws.merge_cells("A1:J1")
-    title_cell = ws["A1"]
-    title_cell.value = vacancy["title"]
-    title_cell.font = Font(bold=True, size=13, color="1E293B")
-    title_cell.alignment = Alignment(horizontal="left", vertical="center")
-    ws.row_dimensions[1].height = 22
+    def merge_row(row_num, value, font, height, bg=None):
+        ws.merge_cells(f"A{row_num}:{last_col_letter}{row_num}")
+        cell = ws[f"A{row_num}"]
+        cell.value = value
+        cell.font = font
+        cell.alignment = Alignment(wrap_text=True, vertical="top")
+        if bg:
+            cell.fill = bg
+        ws.row_dimensions[row_num].height = height
 
-    if vacancy.get("requirements"):
-        ws.merge_cells("A2:J2")
-        req_cell = ws["A2"]
-        req_cell.value = vacancy["requirements"]
-        req_cell.font = Font(size=10, color="64748B")
-        req_cell.alignment = Alignment(wrap_text=True, vertical="top")
-        ws.row_dimensions[2].height = 40
-        header_row = 3
-    else:
-        header_row = 2
+    current_row = 1
+
+    # ── Строка 1: название вакансии ───────────────────────────────────────────
+    merge_row(
+        current_row,
+        vacancy["title"],
+        Font(bold=True, size=13, color="FFFFFF"),
+        22,
+        bg=PatternFill("solid", fgColor="1E293B"),
+    )
+    current_row += 1
+
+    # ── Строка 2: описание вакансии ───────────────────────────────────────────
+    description = vacancy.get("description", "")
+    if description:
+        desc_lines = max(3, min(len(description) // 120 + 1, 15))
+        merge_row(
+            current_row,
+            description,
+            Font(size=10, color="1E293B"),
+            desc_lines * 14,
+        )
+        current_row += 1
+
+    # ── Строка 3: требования (AI-сжатие) ─────────────────────────────────────
+    requirements = vacancy.get("requirements", "")
+    if requirements and requirements != description:
+        merge_row(
+            current_row,
+            f"Требования: {requirements}",
+            Font(size=10, italic=True, color="475569"),
+            max(20, min(len(requirements) // 120 * 14 + 14, 80)),
+        )
+        current_row += 1
+
+    # ── Строка 4: метрики ─────────────────────────────────────────────────────
+    try:
+        metrics = json.loads(vacancy.get("metrics") or "[]")
+    except Exception:
+        metrics = []
+    if metrics:
+        metrics_parts = [f"{m['name']} (вес {m['weight']})" for m in metrics if m.get("name")]
+        merge_row(
+            current_row,
+            "Метрики оценки:  " + "  |  ".join(metrics_parts),
+            Font(size=10, bold=True, color="FFFFFF"),
+            18,
+            bg=SECTION_FILL,
+        )
+        current_row += 1
+
+    header_row = current_row
 
     # ── Заголовки столбцов ────────────────────────────────────────────────────
     for col_idx, (col_name, col_width) in enumerate(COLUMNS, start=1):
         cell = ws.cell(row=header_row, column=col_idx, value=col_name)
         cell.fill = HEADER_FILL
         cell.font = HEADER_FONT
-        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         cell.border = BORDER
         ws.column_dimensions[get_column_letter(col_idx)].width = col_width
-    ws.row_dimensions[header_row].height = 20
+    ws.row_dimensions[header_row].height = 22
 
     # ── Строки кандидатов ────────────────────────────────────────────────────
     for c in candidates:
         cat = c.get("category") or "pending"
         fill = FILLS.get(cat, FILLS["pending"])
         score_font = SCORE_FONT.get(cat, SCORE_FONT["pending"])
-        questions_text = "\n".join(f"• {q}" for q in c["questions"]) if c["questions"] else ""
-        pros_text      = "\n".join(f"+ {p}" for p in c.get("pros", [])) if c.get("pros") else ""
-        cons_text      = "\n".join(f"- {m}" for m in c.get("cons", [])) if c.get("cons") else ""
+
+        questions_text  = "\n".join(f"• {q}" for q in c["questions"]) if c["questions"] else ""
+        pros_text       = "\n".join(f"+ {p}" for p in c.get("pros", [])) if c.get("pros") else ""
+        cons_text       = "\n".join(f"- {m}" for m in c.get("cons", [])) if c.get("cons") else ""
+
+        breakdown = c.get("score_breakdown") or []
+        breakdown_text = "\n".join(
+            f"{b['criterion']}: {b['score']}/10  (вес {b['weight']})  — {b.get('note', '')}"
+            for b in breakdown
+        ) if breakdown else ""
+
+        screened_at = str(c.get("created_at") or "")[:16].replace("T", " ")
 
         data_row = [
-            c.get("score"),
-            CAT_LABELS.get(cat, cat),
-            c.get("name") or "Кандидат",
-            STATUS_LABELS.get(c.get("status", "new"), ""),
-            c.get("summary") or "",
-            pros_text,
-            cons_text,
-            c.get("ai_comment") or "",
-            questions_text,
-            c.get("hh_url") or "",
+            c.get("score"),                                    # 1
+            CAT_LABELS.get(cat, cat),                         # 2
+            c.get("name") or "Кандидат",                      # 3
+            STATUS_LABELS.get(c.get("status", "new"), ""),    # 4
+            screened_at,                                       # 5
+            c.get("summary") or "",                           # 6
+            pros_text,                                         # 7
+            cons_text,                                         # 8
+            c.get("ai_comment") or "",                        # 9
+            breakdown_text,                                    # 10
+            questions_text,                                    # 11
+            c.get("hh_url") or "",                            # 12
+            c.get("resume_text") or "",                       # 13  — резюме в конце
         ]
 
         r = ws.max_row + 1
@@ -661,22 +724,25 @@ def export_candidates(vacancy_id: int):
             if col_idx == 1:
                 cell.font = score_font
                 cell.alignment = Alignment(horizontal="center", vertical="top")
-            if col_idx == 10 and value:  # ссылка
+            if col_idx == 12 and value:  # ссылка
                 cell.hyperlink = value
                 cell.font = Font(color="2563EB", underline="single")
+            if col_idx == 13:  # резюме — серый текст, чуть меньше
+                cell.font = Font(size=9, color="64748B")
 
-        # Примерная высота строки
+        # Высота строки по самой «высокой» колонке (резюме не учитываем — слишком длинный)
         max_lines = max(
-            len(str(data_row[4] or "").split("\n")),
-            len(str(data_row[5] or "").split("\n")),
-            len(str(data_row[6] or "").split("\n")),
-            len(str(data_row[7] or "").split("\n")),
-            len(str(data_row[8] or "").split("\n")),
-            1
+            len(str(data_row[5] or "").split("\n")),   # краткое резюме
+            len(str(data_row[6] or "").split("\n")),   # плюсы
+            len(str(data_row[7] or "").split("\n")),   # минусы
+            len(str(data_row[8] or "").split("\n")),   # комментарий
+            len(str(data_row[9] or "").split("\n")),   # breakdown
+            len(str(data_row[10] or "").split("\n")),  # вопросы
+            1,
         )
-        ws.row_dimensions[r].height = max(18, min(max_lines * 15, 110))
+        ws.row_dimensions[r].height = max(18, min(max_lines * 15, 150))
 
-    # ── Закрепить заголовок ───────────────────────────────────────────────────
+    # ── Закрепить шапку ───────────────────────────────────────────────────────
     ws.freeze_panes = ws.cell(row=header_row + 1, column=1)
 
     # ── Отдать файл ───────────────────────────────────────────────────────────
