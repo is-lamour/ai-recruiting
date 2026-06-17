@@ -243,61 +243,53 @@ async function collectAllResumeLinks(maxPages) {
   const vacancyId = new URLSearchParams(window.location.search).get("vacancyId") || "";
   const links = [];
   const seen = new Set();
-  const pageLimit = (maxPages && maxPages > 0) ? maxPages : 20;
+  const divider = findSuggestedDivider();
 
-  // Основной путь: fetch HTML страницы и берём все хэши из JSON
-  try {
-    const base = new URL(window.location.href);
-    let page = 0;
-    while (page < pageLimit) {
-      base.searchParams.set('page', page);
-      const html = await fetch(base.toString(), { credentials: 'include' }).then(r => r.text());
-      // Берём только хэши внутри объектов с полем hhid — это резюме-отклики
-      const hashes = [...html.matchAll(/"hash":"([a-f0-9]{32,})"[^}]{0,200}"hhid"/g)].map(m => m[1]);
-      if (hashes.length === 0) break;
-      let added = 0;
-      hashes.forEach(hash => {
-        if (seen.has(hash)) return;
-        seen.add(hash);
-        const cleanUrl = `${window.location.origin}/resume/${hash}`;
-        const fetchUrl = vacancyId ? `${cleanUrl}?vacancyId=${vacancyId}` : cleanUrl;
-        links.push({ fetchUrl, storeUrl: cleanUrl, name: "" });
-        added++;
-      });
-      if (added === 0) break;
-      page++;
-    }
-  } catch (e) {
-    console.warn("[HH Screen] fetch-parse failed, falling back to scroll", e);
-  }
+  // Основной путь: берём все <a href="/resume/{hash}?...resumeId=..."> без скролла
+  document.querySelectorAll('a[href*="/resume/"][href*="resumeId="]').forEach(el => {
+    if (divider && !isBeforeDivider(el, divider)) return;
+    const href = el.getAttribute("href") || "";
+    const match = href.match(/\/resume\/([a-f0-9]{32,})/);
+    if (!match) return;
+    const hash = match[1];
+    if (seen.has(hash)) return;
+    seen.add(hash);
+    const cleanUrl = `${window.location.origin}/resume/${hash}`;
+    const fetchUrl = vacancyId ? `${cleanUrl}?vacancyId=${vacancyId}` : cleanUrl;
+    const name = el.textContent?.trim() || "";
+    links.push({ fetchUrl, storeUrl: cleanUrl, name });
+  });
 
-  // Fallback: скролл по DOM текущей страницы
+  console.log(`[HH Screen] DOM собрал ${links.length} резюме`);
+
+  // Fallback: fetch по страницам если DOM ничего не дал
   if (links.length === 0) {
-    const divider = findSuggestedDivider();
-    const savedScrollY = window.scrollY;
-
-    function harvestVisible() {
-      document.querySelectorAll('[data-qa*="resume-serp__resume"][data-resume-hash]').forEach(card => {
-        if (divider && !isBeforeDivider(card, divider)) return;
-        const hash = card.dataset.resumeHash;
-        if (!hash || seen.has(hash)) return;
-        seen.add(hash);
-        const cleanUrl = `${window.location.origin}/resume/${hash}`;
-        const fetchUrl = vacancyId ? `${cleanUrl}?vacancyId=${vacancyId}` : cleanUrl;
-        const name = card.querySelector('[data-qa="serp-item__title"]')?.textContent?.trim() || "";
-        links.push({ fetchUrl, storeUrl: cleanUrl, name });
-      });
+    const pageLimit = (maxPages && maxPages > 0) ? maxPages : 20;
+    console.warn("[HH Screen] DOM пустой, пробуем fetch по страницам");
+    try {
+      const base = new URL(window.location.href);
+      let page = 0;
+      while (page < pageLimit) {
+        base.searchParams.set('page', page);
+        const html = await fetch(base.toString(), { credentials: 'include' }).then(r => r.text());
+        const hashes = [...html.matchAll(/href="\/resume\/([a-f0-9]{32,})[^"]*resumeId=/g)].map(m => m[1]);
+        if (hashes.length === 0) break;
+        let added = 0;
+        hashes.forEach(hash => {
+          if (seen.has(hash)) return;
+          seen.add(hash);
+          const cleanUrl = `${window.location.origin}/resume/${hash}`;
+          const fetchUrl = vacancyId ? `${cleanUrl}?vacancyId=${vacancyId}` : cleanUrl;
+          links.push({ fetchUrl, storeUrl: cleanUrl, name: "" });
+          added++;
+        });
+        if (added === 0) break;
+        page++;
+      }
+      console.log(`[HH Screen] fetch собрал ${links.length} резюме`);
+    } catch (e) {
+      console.error("[HH Screen] fetch тоже упал:", e);
     }
-
-    harvestVisible();
-    const step = Math.floor(window.innerHeight * 0.4);
-    const totalHeight = document.documentElement.scrollHeight - window.innerHeight;
-    for (let y = step; y <= totalHeight + step; y += step) {
-      window.scrollTo({ top: Math.min(y, totalHeight), behavior: "instant" });
-      await sleep(80);
-      harvestVisible();
-    }
-    window.scrollTo({ top: savedScrollY, behavior: "instant" });
   }
 
   return links;
@@ -326,7 +318,7 @@ function getLinksFromDOM() {
   const divider = findSuggestedDivider();
 
   const selectors = [
-    "[data-qa='serp-item__title']",
+    "[data-qa~='serp-item__title']",
     "[data-qa='resume-serp__title-link']",
     "[data-qa='vacancy-response-item__candidate-link']",
     "[data-qa='resume__name']",
