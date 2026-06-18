@@ -94,7 +94,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 // ── Диагностика ───────────────────────────────────────────────────────────────
 
 async function diagnose() {
-  const cards = document.querySelectorAll('[data-qa*="resume-serp__resume"][data-resume-hash]');
+  const hashes = new Set();
+  document.querySelectorAll('a[href*="/resume/"]').forEach(el => {
+    const href = el.getAttribute("href") || "";
+    const match = href.match(/\/resume\/([a-f0-9]{32,})/);
+    if (match) hashes.add(match[1]);
+  });
+  const cards = { length: hashes.size };
 
   // Определяем общее число страниц из пейджера
   let totalPages = 1;
@@ -240,13 +246,28 @@ async function startScreening(vacancyId, maxPages) {
 // ── Сбор ссылок ───────────────────────────────────────────────────────────────
 
 async function collectAllResumeLinks(maxPages) {
-  const vacancyId = new URLSearchParams(window.location.search).get("vacancyId") || "";
+  const params = new URLSearchParams(window.location.search);
+  // Страница откликов: vacancyId; холодный поиск: context_predicted_vacancy_id
+  const vacancyId =
+    params.get("vacancyId") ||
+    params.get("context_predicted_vacancy_id") ||
+    "";
   const links = [];
   const seen = new Set();
   const divider = findSuggestedDivider();
 
-  // Основной путь: берём все <a href="/resume/{hash}?...resumeId=..."> без скролла
-  document.querySelectorAll('a[href*="/resume/"][href*="resumeId="]').forEach(el => {
+  // Основной путь: берём все <a href="/resume/{hash}..."> без скролла.
+  // Сначала проходим по заголовкам (data-qa="serp-item__title") — они несут имя кандидата,
+  // затем по всем остальным ссылкам (аватар и т.д.) чтобы не пропустить резюме без заголовка.
+  const nameMap = {};
+  document.querySelectorAll('[data-qa="serp-item__title"]').forEach(el => {
+    const href = el.getAttribute("href") || "";
+    const match = href.match(/\/resume\/([a-f0-9]{32,})/);
+    if (!match) return;
+    nameMap[match[1]] = el.textContent?.trim() || "";
+  });
+
+  document.querySelectorAll('a[href*="/resume/"]').forEach(el => {
     if (divider && !isBeforeDivider(el, divider)) return;
     const href = el.getAttribute("href") || "";
     const match = href.match(/\/resume\/([a-f0-9]{32,})/);
@@ -256,7 +277,7 @@ async function collectAllResumeLinks(maxPages) {
     seen.add(hash);
     const cleanUrl = `${window.location.origin}/resume/${hash}`;
     const fetchUrl = vacancyId ? `${cleanUrl}?vacancyId=${vacancyId}` : cleanUrl;
-    const name = el.textContent?.trim() || "";
+    const name = nameMap[hash] || el.textContent?.trim() || "";
     links.push({ fetchUrl, storeUrl: cleanUrl, name });
   });
 
@@ -272,7 +293,7 @@ async function collectAllResumeLinks(maxPages) {
       while (page < pageLimit) {
         base.searchParams.set('page', page);
         const html = await fetch(base.toString(), { credentials: 'include' }).then(r => r.text());
-        const hashes = [...html.matchAll(/href="\/resume\/([a-f0-9]{32,})[^"]*resumeId=/g)].map(m => m[1]);
+        const hashes = [...html.matchAll(/href="\/resume\/([a-f0-9]{32,})/g)].map(m => m[1]);
         if (hashes.length === 0) break;
         let added = 0;
         hashes.forEach(hash => {

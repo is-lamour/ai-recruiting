@@ -83,10 +83,10 @@ async function detectTab() {
   const bar = $("page-status");
   if (tab?.url?.includes("hh.kz")) {
     bar.className = "status-bar ok";
-    bar.textContent = "✓ hh.kz — откройте страницу откликов";
+    bar.textContent = "✓ hh.kz — страница откликов или поиска резюме";
   } else {
     bar.className = "status-bar warn";
-    bar.textContent = "⚠ Перейдите на страницу откликов hh.kz";
+    bar.textContent = "⚠ Перейдите на страницу hh.kz с резюме";
     activeTabId = null;
   }
 }
