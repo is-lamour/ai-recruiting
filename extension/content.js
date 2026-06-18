@@ -256,7 +256,7 @@ async function collectAllResumeLinks(maxPages) {
   const seen = new Set();
   const divider = findSuggestedDivider();
 
-  // Основной путь: берём все <a href="/resume/{hash}..."> без скролла.
+  // Шаг 1: берём ссылки с текущей страницы из DOM.
   // Сначала проходим по заголовкам (data-qa="serp-item__title") — они несут имя кандидата,
   // затем по всем остальным ссылкам (аватар и т.д.) чтобы не пропустить резюме без заголовка.
   const nameMap = {};
@@ -281,20 +281,23 @@ async function collectAllResumeLinks(maxPages) {
     links.push({ fetchUrl, storeUrl: cleanUrl, name });
   });
 
-  console.log(`[HH Screen] DOM собрал ${links.length} резюме`);
+  console.log(`[HH Screen] DOM собрал ${links.length} резюме с текущей страницы`);
 
-  // Fallback: fetch по страницам если DOM ничего не дал
-  if (links.length === 0) {
-    const pageLimit = (maxPages && maxPages > 0) ? maxPages : 20;
-    console.warn("[HH Screen] DOM пустой, пробуем fetch по страницам");
-    try {
-      const base = new URL(window.location.href);
-      let page = 0;
-      while (page < pageLimit) {
-        base.searchParams.set('page', page);
+  // Шаг 2: fetch остальных страниц (page=0 ... pageLimit-1), пропуская текущую.
+  // Это основной путь для пагинации — DOM даёт только видимую страницу.
+  const pageLimit = (maxPages && maxPages > 0) ? maxPages : 1;
+  const currentPage = parseInt(params.get("page") || "0", 10);
+
+  if (pageLimit > 1 || links.length === 0) {
+    const effectiveLimit = links.length === 0 ? Math.max(pageLimit, 20) : pageLimit;
+    const base = new URL(window.location.href);
+    for (let page = 0; page < effectiveLimit; page++) {
+      if (page === currentPage && links.length > 0) continue; // уже есть из DOM
+      base.searchParams.set('page', page);
+      try {
         const html = await fetch(base.toString(), { credentials: 'include' }).then(r => r.text());
         const hashes = [...html.matchAll(/href="\/resume\/([a-f0-9]{32,})/g)].map(m => m[1]);
-        if (hashes.length === 0) break;
+        if (hashes.length === 0) break; // страниц больше нет
         let added = 0;
         hashes.forEach(hash => {
           if (seen.has(hash)) return;
@@ -304,15 +307,14 @@ async function collectAllResumeLinks(maxPages) {
           links.push({ fetchUrl, storeUrl: cleanUrl, name: "" });
           added++;
         });
-        if (added === 0) break;
-        page++;
+        console.log(`[HH Screen] fetch страница ${page}: +${added} резюме`);
+      } catch (e) {
+        console.error(`[HH Screen] fetch страница ${page} упала:`, e);
       }
-      console.log(`[HH Screen] fetch собрал ${links.length} резюме`);
-    } catch (e) {
-      console.error("[HH Screen] fetch тоже упал:", e);
     }
   }
 
+  console.log(`[HH Screen] Итого: ${links.length} резюме`);
   return links;
 }
 
