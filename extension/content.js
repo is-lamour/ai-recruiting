@@ -96,9 +96,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 async function diagnose() {
   const hashes = new Set();
   document.querySelectorAll('a[href*="/resume/"]').forEach(el => {
-    const href = el.getAttribute("href") || "";
-    const match = href.match(/\/resume\/([a-f0-9]{32,})/);
-    if (match) hashes.add(match[1]);
+    const hash = extractResumeHash(el.getAttribute("href") || "");
+    if (hash) hashes.add(hash);
   });
   const cards = { length: hashes.size };
 
@@ -245,6 +244,21 @@ async function startScreening(vacancyId, maxPages) {
 
 // ── Сбор ссылок ───────────────────────────────────────────────────────────────
 
+// Извлекает id резюме из ссылки: путь /resume/{hash} либо параметр resumeId=/hash=.
+// Толерантен к новым форматам HH (hash может содержать не только hex, но и др. символы).
+function extractResumeHash(href) {
+  if (!href) return null;
+  const m = href.match(/\/resume\/([a-zA-Z0-9_-]{32,})/);
+  if (m) return m[1];
+  // Fallback: id в query-параметре (новые ссылки вида /resume/…?…&resumeId=…)
+  try {
+    const q = new URLSearchParams(href.split("?")[1] || "");
+    return q.get("resumeId") || q.get("hash") || null;
+  } catch {
+    return null;
+  }
+}
+
 async function collectAllResumeLinks(maxPages) {
   const params = new URLSearchParams(window.location.search);
   // Страница откликов: vacancyId; холодный поиск: context_predicted_vacancy_id
@@ -256,23 +270,70 @@ async function collectAllResumeLinks(maxPages) {
   const seen = new Set();
   const divider = findSuggestedDivider();
 
+  // Шаг 0 (страница откликов): hh.kz грузит кандидатов лениво — в DOM отрисовано
+  // только ~7 карточек, остальные приходят JSON-запросом candidates_list.
+  // Тянем ПОЛНЫЙ список хэшей напрямую из этого API, не дожидаясь отрисовки.
+  let apiCollectedFull = false;
+  if (vacancyId) {
+    try {
+      const apiUrl = `${window.location.origin}/shards/employer/vacancyresponses/candidates_list?` +
+        new URLSearchParams({ vacancyId, order: "RELEVANCE", limit: "50" });
+      const res = await fetch(apiUrl, {
+        credentials: "include",
+        headers: { Accept: "application/json, text/plain, */*" },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+
+      // Имена и хэши из массива resumes (если endpoint его отдаёт)
+      const nameByHash = {};
+      for (const r of json.resumes || []) {
+        const hash = r?._attributes?.hash;
+        if (!hash) continue;
+        const first = r?.firstName?.[0]?.string || "";
+        const last  = r?.lastName?.[0]?.string  || "";
+        nameByHash[hash] =
+          [first, last].filter(Boolean).join(" ") || r?.title?.[0]?.string || "";
+      }
+      // Маппинг applicant -> hash (содержит всех заявителей этой вакансии)
+      for (const v of Object.values(json.vacancyToResumeSkillMatch || {})) {
+        if (v?.resume_id && !(v.resume_id in nameByHash)) nameByHash[v.resume_id] = "";
+      }
+
+      let added = 0;
+      for (const [hash, name] of Object.entries(nameByHash)) {
+        if (seen.has(hash)) continue;
+        seen.add(hash);
+        links.push({
+          fetchUrl: `${window.location.origin}/resume/${hash}?vacancyId=${vacancyId}`,
+          storeUrl: `${window.location.origin}/resume/${hash}`,
+          name,
+        });
+        added++;
+      }
+      if (added > 0) {
+        apiCollectedFull = true;
+        console.log(`[HH Screen] candidates_list API: +${added} резюме`);
+      }
+    } catch (e) {
+      console.warn("[HH Screen] candidates_list API не сработал, используется DOM+fetch:", e);
+    }
+  }
+
   // Шаг 1: берём ссылки с текущей страницы из DOM.
   // Сначала проходим по заголовкам (data-qa="serp-item__title") — они несут имя кандидата,
   // затем по всем остальным ссылкам (аватар и т.д.) чтобы не пропустить резюме без заголовка.
   const nameMap = {};
   document.querySelectorAll('[data-qa="serp-item__title"]').forEach(el => {
-    const href = el.getAttribute("href") || "";
-    const match = href.match(/\/resume\/([a-f0-9]{32,})/);
-    if (!match) return;
-    nameMap[match[1]] = el.textContent?.trim() || "";
+    const hash = extractResumeHash(el.getAttribute("href") || "");
+    if (!hash) return;
+    nameMap[hash] = el.textContent?.trim() || "";
   });
 
   document.querySelectorAll('a[href*="/resume/"]').forEach(el => {
     if (divider && !isBeforeDivider(el, divider)) return;
-    const href = el.getAttribute("href") || "";
-    const match = href.match(/\/resume\/([a-f0-9]{32,})/);
-    if (!match) return;
-    const hash = match[1];
+    const hash = extractResumeHash(el.getAttribute("href") || "");
+    if (!hash) return;
     if (seen.has(hash)) return;
     seen.add(hash);
     const cleanUrl = `${window.location.origin}/resume/${hash}`;
@@ -288,7 +349,7 @@ async function collectAllResumeLinks(maxPages) {
   const pageLimit = (maxPages && maxPages > 0) ? maxPages : 1;
   const currentPage = parseInt(params.get("page") || "0", 10);
 
-  if (pageLimit > 1 || links.length === 0) {
+  if (!apiCollectedFull && (pageLimit > 1 || links.length === 0)) {
     const effectiveLimit = links.length === 0 ? Math.max(pageLimit, 20) : pageLimit;
     const base = new URL(window.location.href);
     for (let page = 0; page < effectiveLimit; page++) {
@@ -296,7 +357,7 @@ async function collectAllResumeLinks(maxPages) {
       base.searchParams.set('page', page);
       try {
         const html = await fetch(base.toString(), { credentials: 'include' }).then(r => r.text());
-        const hashes = [...html.matchAll(/href="\/resume\/([a-f0-9]{32,})/g)].map(m => m[1]);
+        const hashes = [...html.matchAll(/href="\/resume\/([a-zA-Z0-9_-]{32,})/g)].map(m => m[1]);
         if (hashes.length === 0) break; // страниц больше нет
         let added = 0;
         hashes.forEach(hash => {
