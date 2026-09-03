@@ -135,10 +135,20 @@ class CaptchaError extends Error {
   constructor() { super("captcha"); this.name = "CaptchaError"; }
 }
 
+// Источник кандидата по URL текущей страницы
+//   vacancyresponses → "response" (отклик), search/resume → "cold" (холодный поиск), иначе ""
+function detectSource() {
+  const p = window.location.pathname || "";
+  if (/vacancyresponses/i.test(p)) return "response";
+  if (/\/search\/resume/i.test(p)) return "cold";
+  return "";
+}
+
 async function startScreening(vacancyId, maxPages) {
   screeningActive = true;
   await resetCancel();
 
+  const source = detectSource();
   let processed = 0, errors = 0, skipped = 0;
   const captchaQueue = [];
 
@@ -193,6 +203,7 @@ async function startScreening(vacancyId, maxPages) {
             name: link.name || resumeData.name || "Кандидат",
             hh_url: link.storeUrl,
             resume_text: resumeData.text,
+            source,
           });
           processed++;
         } catch (e) {
@@ -222,6 +233,7 @@ async function startScreening(vacancyId, maxPages) {
             name: link.name || resumeData.name || "Кандидат",
             hh_url: link.storeUrl,
             resume_text: resumeData.text,
+            source,
           });
           processed++;
         } catch (e) {
@@ -517,6 +529,7 @@ async function executeRejections(candidates, sendResponse) {
       remaining: Math.max(0, remaining),
       notFound: Math.max(0, remaining),
       attempted: apiRes.attempted,
+      coldSkipped: apiRes.coldSkipped || 0,
       notFoundNames: [],
     });
     return;
@@ -916,10 +929,19 @@ async function rejectByApi(candidates) {
     return false;
   }
 
-  let attempted = 0, rejected = 0;
+  let attempted = 0, rejected = 0, coldSkipped = 0;
   for (const c of candidates) {
     const hash = (c.hh_url || "").split("/resume/")[1]?.split("?")[0]?.split("/")[0];
     if (!hash) continue;
+
+    // Кандидаты из холодного поиска не откликались — на странице откликов их нет.
+    // Не пытаемся отклонить и не считаем ошибкой; просто помечаем отдельно.
+    if (c.source === "cold") {
+      coldSkipped++;
+      console.log(`[HH Reject] холодный кандидат, не трогаем на откликах: ${hash}`);
+      continue;
+    }
+
     const info = map.get(hash);
     attempted++;
     const mailText =
@@ -933,7 +955,7 @@ async function rejectByApi(candidates) {
     }
     await sleep(350);
   }
-  return { ok: true, attempted, rejected, loadedCount: map.size };
+  return { ok: true, attempted, rejected, coldSkipped, loadedCount: map.size };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

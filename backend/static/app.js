@@ -885,6 +885,8 @@ function buildCard(c) {
           <a href="${escHtml(c.hh_url)}" target="_blank">${escHtml(c.name || "Кандидат")}</a>
         </span>
         <span class="category-badge ${cat}">${catLabel(cat)}</span>
+        ${c.source === "cold" ? `<span class="src-badge src-cold" title="Отобран через холодный поиск (не откликался)">❄ холодный</span>`
+          : c.source === "response" ? `<span class="src-badge src-response" title="Отклик на вакансию">📩 отклик</span>` : ""}
         ${statusLabel ? `<span class="status-badge">${escHtml(statusLabel)}</span>` : ""}
         ${c.created_at ? `<span class="screened-at">🕐 ${formatDateTime(c.created_at)}</span>` : ""}
       </div>

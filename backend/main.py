@@ -70,6 +70,7 @@ class CandidateScreen(BaseModel):
     name: Optional[str] = None
     hh_url: str
     resume_text: str
+    source: Optional[str] = None  # '' | 'response' (отклик) | 'cold' (холодный поиск)
 
 
 class ScreenByUrl(BaseModel):
@@ -388,7 +389,7 @@ def _parse_candidate(row) -> dict:
 
 # ── Screening ─────────────────────────────────────────────────────────────────
 
-def _screen_and_store(vacancy_id: int, name: Optional[str], hh_url: str, resume_text: str, api_key: Optional[str]):
+def _screen_and_store(vacancy_id: int, name: Optional[str], hh_url: str, resume_text: str, api_key: Optional[str], source: Optional[str] = None):
     """Общий путь скрининга: читает требования/метрики вакансии, вызывает AI,
     сохраняет кандидата в БД и возвращает готовый объект кандидата."""
     resume_text = (resume_text or "").strip()
@@ -415,8 +416,8 @@ def _screen_and_store(vacancy_id: int, name: Optional[str], hh_url: str, resume_
             cur = conn.execute(
                 """INSERT INTO candidates
                    (vacancy_id, name, hh_url, resume_text, score, category, ai_comment,
-                    questions, summary, pros, cons, score_breakdown, is_trashed)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)""",
+                    questions, summary, pros, cons, score_breakdown, is_trashed, source)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)""",
                 (
                     vacancy_id,
                     name,
@@ -430,6 +431,7 @@ def _screen_and_store(vacancy_id: int, name: Optional[str], hh_url: str, resume_
                     json.dumps(result.get("pros", []),    ensure_ascii=False),
                     json.dumps(result.get("cons", []),    ensure_ascii=False),
                     json.dumps(result.get("score_breakdown", []), ensure_ascii=False),
+                    source or "",
                 ),
             )
             conn.commit()
@@ -450,7 +452,10 @@ def _screen_and_store(vacancy_id: int, name: Optional[str], hh_url: str, resume_
 
 @app.post("/api/screen")
 def screen_candidate(request: Request, data: CandidateScreen):
-    return _screen_and_store(data.vacancy_id, data.name, data.hh_url, data.resume_text, _get_gemini_key(request))
+    return _screen_and_store(
+        data.vacancy_id, data.name, data.hh_url, data.resume_text,
+        _get_gemini_key(request), source=data.source,
+    )
 
 
 # ── Screening by URL / file ───────────────────────────────────────────────────
@@ -949,11 +954,11 @@ def pending_actions(vacancy_id: int):
     conn = get_db()
     try:
         to_reject = conn.execute(
-            "SELECT id, hh_url, name FROM candidates WHERE vacancy_id = ? AND status = 'to_reject'",
+            "SELECT id, hh_url, name, source FROM candidates WHERE vacancy_id = ? AND status = 'to_reject'",
             (vacancy_id,),
         ).fetchall()
         to_huntflow = conn.execute(
-            "SELECT id, hh_url, name FROM candidates WHERE vacancy_id = ? AND status = 'to_huntflow'",
+            "SELECT id, hh_url, name, source FROM candidates WHERE vacancy_id = ? AND status = 'to_huntflow'",
             (vacancy_id,),
         ).fetchall()
         return {

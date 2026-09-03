@@ -74,6 +74,8 @@ def init_db():
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_candidates_vacancy_url ON candidates(vacancy_id, hh_url)",
         "ALTER TABLE vacancies ADD COLUMN boolean_search TEXT DEFAULT ''",
         "ALTER TABLE vacancies ADD COLUMN metrics TEXT DEFAULT '[]'",
+        # Источник кандидата: '' (неизвестно) | 'response' (отклик) | 'cold' (холодный поиск)
+        "ALTER TABLE candidates ADD COLUMN source TEXT DEFAULT ''",
     ]:
         try:
             conn.execute(sql)

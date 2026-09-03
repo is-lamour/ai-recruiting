@@ -412,10 +412,23 @@ async function loadPendingActions() {
         cb.checked = true;
         cb.dataset.id = c.id;
         cb.dataset.hhUrl = c.hh_url;
+        cb.dataset.source = c.source || "";
         const span = document.createElement("span");
         span.textContent = c.name || c.hh_url;
         label.appendChild(cb);
         label.appendChild(span);
+        // Метка источника: отклик / холодный поиск.
+        if (c.source === "cold") {
+          const tag = document.createElement("em");
+          tag.className = "src-tag src-cold";
+          tag.textContent = "холодный поиск";
+          label.appendChild(tag);
+        } else if (c.source === "response") {
+          const tag = document.createElement("em");
+          tag.className = "src-tag src-response";
+          tag.textContent = "отклик";
+          label.appendChild(tag);
+        }
         list.appendChild(label);
       });
       $("reject-check-all").checked = true;
@@ -449,7 +462,11 @@ function updateRejectCount() {
 async function executeRejections() {
   if (!activeTabId) { alert("Откройте страницу откликов hh.kz"); return; }
   const checked = [...document.querySelectorAll("#reject-list .reject-item input:checked")];
-  const candidates = checked.map(cb => ({ id: parseInt(cb.dataset.id), hh_url: cb.dataset.hhUrl }));
+  const candidates = checked.map(cb => ({
+    id: parseInt(cb.dataset.id),
+    hh_url: cb.dataset.hhUrl,
+    source: cb.dataset.source || "",
+  }));
   if (!candidates.length) return;
 
   $("btn-do-rejections").disabled = true;
@@ -462,6 +479,9 @@ async function executeRejections() {
     });
 
     let msg = `Выполнено: ${result.rejected} из ${result.total} отказов`;
+    if (result.coldSkipped > 0) {
+      msg += `\nПропущено (холодный поиск, не откликались): ${result.coldSkipped}`;
+    }
     if (result.remaining > 0) {
       const bits = [];
       if (result.notFound > 0) {

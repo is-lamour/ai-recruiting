@@ -223,3 +223,14 @@ textarea { min-height: 90px; }
 }
 .reject-item input[type="checkbox"] { cursor: pointer; flex-shrink: 0; }
 .reject-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.src-tag {
+  flex-shrink: 0;
+  font-style: normal;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 10px;
+  border: 1px solid;
+}
+.src-tag.src-cold { color: #92400e; background: #fef3c7; border-color: #f59e0b; }
+.src-tag.src-response { color: #166534; background: #dcfce7; border-color: #22c55e; }
