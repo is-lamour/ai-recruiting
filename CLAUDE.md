@@ -47,6 +47,15 @@ Manifest V3 extension targeting hh.kz. Three-layer architecture:
 - **`content.js`** — injected into hh.kz pages. Does the actual work: collects resume links from the DOM (handles pagination up to 20 pages), fetches each resume HTML via `fetch` with `credentials: include`, extracts text, and POSTs to the backend `/api/screen`. Sends progress updates via `chrome.storage.session`. Also handles automated rejections by clicking the HH "discard" button in the DOM.
 - **`background.js`** (service worker) — CORS proxy between content script and backend. Content script cannot call `localhost:8000` directly due to CSP, so it sends messages (`api_get`, `api_post`, `api_patch`) to background which makes the actual fetch. Also relays `chrome.storage.session` reads for cancel/progress state.
 
+### hh site structure (WIP)
+
+hh.kz renders the responses list **virtually** — only ~7 cards are in the DOM, so
+DOM-based scraping never "sees" all candidates. Both screening and rejections pull
+the full list from hh's internal API (`candidates_list`) and reject via
+`change_topic`. **If the tool stops seeing all resumes, read
+`docs/hh-site-structure.md` before touching the DOM logic** — the fix is almost
+always in the API field mapping, not scrolling.
+
 ### Key data flow
 
 1. User selects a vacancy in popup → content script collects all resume URLs from the current hh.kz responses page
