@@ -207,6 +207,12 @@
           <button id="btn-rescreen-all" class="btn btn-ghost" title="Переоценить всех кандидатов по текущим метрикам">
             ↺ Перескрининг всех
           </button>
+          <button id="btn-screen-url" class="btn btn-ghost" title="Скрининг резюме по ссылке (habr, linkedin и т.д.)">
+            🔗 По ссылке
+          </button>
+          <button id="btn-screen-file" class="btn btn-ghost" title="Скрининг резюме из файла (PDF / DOCX / TXT)">
+            📄 По файлу
+          </button>
           <button id="btn-refresh" class="btn btn-ghost" title="Обновить данные">
             ↻ Обновить
           </button>
@@ -290,6 +296,28 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=26"></script>
+  <!-- Модалка скрининга по ссылке -->
+  <div id="screen-url-modal" class="modal-overlay hidden">
+    <div class="modal" style="max-width:520px">
+      <button class="modal-close" id="screen-url-close">✕</button>
+      <h3 style="margin-bottom:12px">🔗 Скрининг по ссылке</h3>
+      <p style="font-size:13px;color:#64748b;margin-bottom:12px">
+        Вставьте ссылку на резюме (habr, LinkedIn, блог, сайт и т.д.) — бэкенд
+        загрузит страницу, извлечёт текст и проскринит как обычное резюме.
+      </p>
+      <input type="text" id="screen-url-input" placeholder="https://..." style="width:100%;margin-bottom:10px" />
+      <input type="text" id="screen-url-name" placeholder="Имя кандидата (необязательно)" style="width:100%;margin-bottom:12px" />
+      <div id="screen-url-error" class="screen-error hidden"></div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn btn-primary" id="btn-screen-url-run">Скринить</button>
+        <button class="btn btn-ghost" id="btn-screen-url-cancel">Отмена</button>
+        <span id="screen-url-spinner" class="screen-spinner hidden"><span class="spinner"></span> Загружаем и скриним...</span>
+      </div>
+    </div>
+  </div>
+
+  <input type="file" id="screen-file-input" accept=".pdf,.docx,.txt,.md,.text" style="display:none" />
+
+  <script src="/static/app.js?v=27"></script>
 </body>
 </html>

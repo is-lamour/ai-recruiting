@@ -1302,3 +1302,29 @@ main { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
   .candidate-card { grid-template-columns: 1fr; }
   .score-badge { display: none; }
 }
+
+/* ── Screen by URL / file ─────────────────────────────────────────────────── */
+#screen-url-input, #screen-url-name {
+  padding: 8px 10px;
+  border: 1px solid var(--border, #cbd5e1);
+  border-radius: 8px;
+  font-size: 14px;
+  background: var(--card, #fff);
+  color: var(--text, #0f172a);
+}
+.screen-error {
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+.screen-spinner {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #64748b;
+}

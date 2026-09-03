@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, Body
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, Body, UploadFile, File, Form
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
@@ -6,6 +6,9 @@ from pydantic import BaseModel
 from typing import Optional
 import json
 import io
+import re
+import uuid
+import zipfile
 import sqlite3
 import threading
 import requests as http_requests
@@ -67,6 +70,12 @@ class CandidateScreen(BaseModel):
     name: Optional[str] = None
     hh_url: str
     resume_text: str
+
+
+class ScreenByUrl(BaseModel):
+    vacancy_id: int
+    url: str
+    name: Optional[str] = None
 
 
 class StatusUpdate(BaseModel):
@@ -379,12 +388,17 @@ def _parse_candidate(row) -> dict:
 
 # ── Screening ─────────────────────────────────────────────────────────────────
 
-@app.post("/api/screen")
-def screen_candidate(request: Request, data: CandidateScreen):
+def _screen_and_store(vacancy_id: int, name: Optional[str], hh_url: str, resume_text: str, api_key: Optional[str]):
+    """Общий путь скрининга: читает требования/метрики вакансии, вызывает AI,
+    сохраняет кандидата в БД и возвращает готовый объект кандидата."""
+    resume_text = (resume_text or "").strip()
+    if not resume_text:
+        raise HTTPException(status_code=422, detail="Пустой текст резюме — нечего скринить")
+
     conn = get_db()
     try:
         vacancy = conn.execute(
-            "SELECT * FROM vacancies WHERE id = ?", (data.vacancy_id,)
+            "SELECT * FROM vacancies WHERE id = ?", (vacancy_id,)
         ).fetchone()
         if not vacancy:
             raise HTTPException(status_code=404, detail="Вакансия не найдена")
@@ -395,7 +409,7 @@ def screen_candidate(request: Request, data: CandidateScreen):
             metrics = json.loads(raw_metrics or "[]") if isinstance(raw_metrics, str) else (raw_metrics or [])
         except Exception:
             metrics = []
-        result = screen_resume(requirements, data.resume_text, api_key=_get_gemini_key(request), metrics=metrics or None)
+        result = screen_resume(requirements, resume_text, api_key=api_key, metrics=metrics or None)
 
         try:
             cur = conn.execute(
@@ -404,10 +418,10 @@ def screen_candidate(request: Request, data: CandidateScreen):
                     questions, summary, pros, cons, score_breakdown, is_trashed)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)""",
                 (
-                    data.vacancy_id,
-                    data.name,
-                    data.hh_url,
-                    data.resume_text,
+                    vacancy_id,
+                    name,
+                    hh_url,
+                    resume_text,
                     result["score"],
                     result["category"],
                     result["comment"],
@@ -426,12 +440,158 @@ def screen_candidate(request: Request, data: CandidateScreen):
             # Параллельный запрос уже вставил эту пару (vacancy_id, hh_url) — возвращаем существующую
             row = conn.execute(
                 "SELECT * FROM candidates WHERE hh_url = ? AND vacancy_id = ?",
-                (data.hh_url, data.vacancy_id),
+                (hh_url, vacancy_id),
             ).fetchone()
 
         return _parse_candidate(row)
     finally:
         conn.close()
+
+
+@app.post("/api/screen")
+def screen_candidate(request: Request, data: CandidateScreen):
+    return _screen_and_store(data.vacancy_id, data.name, data.hh_url, data.resume_text, _get_gemini_key(request))
+
+
+# ── Screening by URL / file ───────────────────────────────────────────────────
+
+_BROWSER_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120",
+    "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8",
+}
+
+_URL_REMOVE_TAGS = ["script", "style", "noscript", "nav", "header", "footer", "aside", "form", "button", "iframe", "svg"]
+# Блоки, которые почти наверняка не являются резюме
+_URL_JUNK_MARKERS = [
+    "cookie", "файлы cookie", "политика конфиденциальности", "подписаться",
+    "share", "поделиться", "реклама", "источник",
+]
+
+
+def _extract_url_text(html: str) -> str:
+    """Извлекает «читаемый» текст страницы — как можно ближе к содержимому резюме."""
+    soup = BeautifulSoup(html, "html.parser")
+    for tag in soup(_URL_REMOVE_TAGS):
+        tag.decompose()
+
+    # Берём самый плотный по тексту контейнер, иначе body
+    candidate_els = soup(["main", "article"]) or ([soup.body] if soup.body else [])
+    best, best_len = "", 0
+    for el in candidate_els:
+        text = el.get_text(" ", strip=True)
+        if len(text) > best_len:
+            best, best_len = text, len(text)
+
+    # Нормализуем пробелы и переносы
+    text = re.sub(r"[ \t]+", " ", best)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = re.sub(r"([^\n])\n(?=[^\nа-яёa-z])", r"\1 ", text)  # склейка однострочных полей
+
+    # Отбрасываем кандидатов, которые выглядят как мусор (менее 200 символов полезного текста)
+    return text.strip()
+
+
+def _normalize_resume_text(text: str, *, min_len: int = 200, check_junk: bool = True):
+    """Чистит извлечённый текст и решает, годится ли он для скрининга.
+
+    min_len — минимальная длина полезного текста (для страниц выше порог,
+    чтобы отсечь экраны логина/капчи; для файлов ниже — короткое резюме тоже валидно).
+    """
+    text = (text or "").strip()
+    if len(text) < min_len:
+        return ""
+    if check_junk:
+        # Если страница почти вся из «мусорных» маркеров — считаем бесполезной
+        hits = sum(1 for m in _URL_JUNK_MARKERS if m.lower() in text.lower())
+        if hits >= 3:
+            return ""
+    return text[:12000]
+
+
+@app.post("/api/screen/url")
+def screen_by_url(request: Request, data: ScreenByUrl):
+    """Скринит резюме, которое находится по произвольной ссылке (habr, linkedin и т.д.)."""
+    url = data.url.strip().strip("<>")
+    if not url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=422, detail="Не похоже на ссылку: нужно http(s)://")
+
+    try:
+        resp = http_requests.get(url, timeout=15, headers=_BROWSER_HEADERS, allow_redirects=True)
+        resp.raise_for_status()
+        resp.encoding = resp.apparent_encoding or "utf-8"
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Не удалось загрузить страницу: {e}")
+
+    text = _normalize_resume_text(_extract_url_text(resp.text), min_len=200, check_junk=True)
+    if not text:
+        raise HTTPException(
+            status_code=422,
+            detail="Не удалось извлечь текст со страницы (страница может требовать авторизации, "
+                   "например LinkedIn, или не содержать текста). Попробуйте другую ссылку.",
+        )
+    print(f"[screen/url] url={url[:80]} text_len={len(text)}")
+
+    return _screen_and_store(data.vacancy_id, data.name, url, text, _get_gemini_key(request))
+
+
+def _extract_file_text(filename: str, content: bytes) -> str:
+    """Извлекает текст из PDF / DOCX / TXT / MD. Возвращает чистый текст."""
+    ext = Path(filename).suffix.lower()
+
+    if ext in (".pdf",):
+        try:
+            from pypdf import PdfReader
+        except ImportError:
+            raise HTTPException(status_code=500, detail="Библиотека pypdf не установлена — обновите зависимости")
+        try:
+            reader = PdfReader(io.BytesIO(content))
+            pages = [p.extract_text() or "" for p in reader.pages]
+            return "\n".join(pages)
+        except Exception as e:
+            raise HTTPException(status_code=422, detail=f"Не удалось прочитать PDF: {e}")
+
+    if ext in (".docx",):
+        try:
+            with zipfile.ZipFile(io.BytesIO(content)) as z:
+                xml = z.read("word/document.xml").decode("utf-8", "ignore")
+        except Exception as e:
+            raise HTTPException(status_code=422, detail=f"Не удалось прочитать DOCX: {e}")
+        # Вытаскиваем текст из всех <w:t>, вставляя перевод строки на границе параграфов </w:p>
+        xml = re.sub(r"</w:p>", "\n", xml)
+        xml = re.sub(r"<w:t[^>]*>", "", xml)
+        xml = re.sub(r"</w:t>", "", xml)
+        return re.sub(r"<[^>]+>", "", xml)
+
+    if ext in (".txt", ".md", ".text"):
+        for enc in ("utf-8", "cp1251", "latin-1"):
+            try:
+                return content.decode(enc)
+            except (UnicodeDecodeError, LookupError):
+                continue
+        return content.decode("utf-8", "ignore")
+
+    raise HTTPException(
+        status_code=422,
+        detail=f"Неподдерживаемый формат '{ext or 'файл'}'. Поддерживаются: PDF, DOCX, TXT, MD.",
+    )
+
+
+@app.post("/api/screen/file")
+async def screen_by_file(request: Request, vacancy_id: int = Form(...), file: UploadFile = File(...), name: Optional[str] = Form(default=None)):
+    """Скринит резюме из загруженного файла (PDF/DOCX/TXT). Файл в БД не сохраняется."""
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=422, detail="Пустой файл")
+
+    text = _extract_file_text(file.filename or "resume", content)
+    text = _normalize_resume_text(text, min_len=40, check_junk=False)
+    if not text:
+        raise HTTPException(status_code=422, detail="Не удалось извлечь текст из файла. Проверьте формат.")
+
+    display_name = name or Path(file.filename or "Кандидат").stem
+    # Синтетический уникальный ключ для обязательной колонки hh_url (дедупликация по-прежнему работает)
+    file_token = f"file://{uuid.uuid4().hex}"
+    return _screen_and_store(vacancy_id, display_name, file_token, text, _get_gemini_key(request))
 
 
 # ── Candidates ────────────────────────────────────────────────────────────────

@@ -111,5 +111,29 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
+  if (message.action === "extract_tab_text") {
+    // Читаем текст с открытой вкладки через injected-скрипт: страница уже загружена
+    // в браузере с сессией пользователя, поэтому авторизация (LinkedIn и т.п.) и
+    // JS-рендеринг обрабатываются автоматически — никаких кук пересылать не нужно.
+    chrome.scripting.executeScript({
+      target: { tabId: message.tabId },
+      func: () => {
+        const t = document.body ? (document.body.innerText || document.body.textContent || "") : "";
+        // Сжимаем лишние пробелы/переносы
+        return t.replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+      },
+    })
+      .then(results => {
+        const text = (results && results[0] && results[0].result) || "";
+        if (!text) {
+          sendResponse({ ok: false, error: "На странице не нашлось текста" });
+          return;
+        }
+        sendResponse({ ok: true, text, url: message.url });
+      })
+      .catch(err => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+
   return true;
 });

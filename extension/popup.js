@@ -86,9 +86,10 @@ async function detectTab() {
     bar.textContent = "✓ hh.kz — страница откликов или поиска резюме";
   } else {
     bar.className = "status-bar warn";
-    bar.textContent = "⚠ Перейдите на страницу hh.kz с резюме";
-    activeTabId = null;
+    bar.textContent = "⚠ Массовый скрининг — на странице hh.kz. Одиночный — на любой странице.";
   }
+  // Одиночный скрининг доступен на любой странице (LinkedIn, habr и т.д.)
+  $("page-screen-section")?.classList.toggle("hidden", !activeTabId);
 }
 
 async function checkBackend() {
@@ -512,6 +513,54 @@ async function runDiagnose() {
   }
 }
 
+// ── Screen current page (single, any site) ───────────────────────────────────
+
+async function screenCurrentPage() {
+  if (!selectedVacancyId) { alert("Сначала выберите вакансию"); return; }
+  if (!activeTabId) { alert("Откройте страницу с резюме"); return; }
+
+  const btn = $("btn-screen-current-page");
+  const out = $("page-screen-result");
+  btn.disabled = true;
+  btn.textContent = "⏳ Скриним...";
+  out.textContent = "";
+
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+    const res = await chrome.runtime.sendMessage({
+      action: "extract_tab_text",
+      tabId: tab.id,
+      url: tab.url || "",
+    });
+    if (!res?.ok) throw new Error(res?.error || "Не удалось получить текст страницы");
+
+    const apiKey = await getApiKey();
+    const headers = { "Content-Type": "application/json" };
+    if (apiKey) headers["X-Gemini-Key"] = apiKey;
+
+    const body = {
+      vacancy_id: parseInt(selectedVacancyId),
+      name: $("page-screen-name").value.trim() || null,
+      hh_url: res.url,
+      resume_text: res.text,
+    };
+
+    const resp = await fetch(`${API}/api/screen`, { method: "POST", headers, body: JSON.stringify(body) });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`);
+
+    out.textContent = `✓ ${data.name || "Кандидат"} — ${data.score} (${data.category}). Откройте дашборд.`;
+    $("page-screen-name").value = "";
+  } catch (e) {
+    out.textContent = "✗ " + e.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "📄 Скринить эту страницу";
+    await loadPendingActions();
+  }
+}
+
 // ── Event binding ─────────────────────────────────────────────────────────────
 
 function bindEvents() {
@@ -563,6 +612,7 @@ function bindEvents() {
   $("reject-list").addEventListener("change", () => updateRejectCount());
   $("btn-do-huntflow").addEventListener("click",    openHuntflowTabs);
   $("btn-diagnose").addEventListener("click",       runDiagnose);
+  $("btn-screen-current-page").addEventListener("click", screenCurrentPage);
 }
 
 async function onVacancyChange(id) {

@@ -1054,6 +1054,105 @@ async function bulkMarkForReject() {
   await refreshData();
 }
 
+// ── Screen by URL / file ──────────────────────────────────────────────────────
+
+function openScreenUrlModal() {
+  if (!currentVacancyId) { alert("Сначала выберите вакансию"); return; }
+  document.getElementById("screen-url-input").value = "";
+  document.getElementById("screen-url-name").value = "";
+  setScreenUrlError("");
+  document.getElementById("screen-url-spinner").classList.add("hidden");
+  document.getElementById("btn-screen-url-run").disabled = false;
+  document.getElementById("screen-url-modal").classList.remove("hidden");
+  document.getElementById("screen-url-input").focus();
+}
+
+function closeScreenUrlModal() {
+  document.getElementById("screen-url-modal").classList.add("hidden");
+}
+
+function setScreenUrlError(msg) {
+  const el = document.getElementById("screen-url-error");
+  el.textContent = msg;
+  el.classList.toggle("hidden", !msg);
+}
+
+async function runScreenByUrl() {
+  if (!currentVacancyId) return;
+  const url = document.getElementById("screen-url-input").value.trim();
+  if (!url) { setScreenUrlError("Введите ссылку"); return; }
+
+  const btn = document.getElementById("btn-screen-url-run");
+  btn.disabled = true;
+  document.getElementById("screen-url-spinner").classList.remove("hidden");
+  setScreenUrlError("");
+
+  try {
+    const res = await fetch(`${API}/api/screen/url`, {
+      method: "POST",
+      headers: apiHeaders(),
+      body: JSON.stringify({
+        vacancy_id: currentVacancyId,
+        url: url,
+        name: document.getElementById("screen-url-name").value.trim() || null,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setScreenUrlError(data.detail || "Не удалось проскринить по ссылке");
+      return;
+    }
+    closeScreenUrlModal();
+    showToast(`Резюме проскринировано: ${data.name || "Кандидат"}`, "success");
+    await refreshData();
+  } catch (e) {
+    setScreenUrlError("Ошибка сети: " + e.message);
+  } finally {
+    btn.disabled = false;
+    document.getElementById("screen-url-spinner").classList.add("hidden");
+  }
+}
+
+function pickScreenFile() {
+  if (!currentVacancyId) { alert("Сначала выберите вакансию"); return; }
+  document.getElementById("screen-file-input").value = "";
+  document.getElementById("screen-file-input").click();
+}
+
+async function onScreenFileSelected(e) {
+  const file = e.target.files && e.target.files[0];
+  if (!file || !currentVacancyId) return;
+
+  const btn = document.getElementById("btn-screen-file");
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "📄 Скриним...";
+
+  try {
+    const fd = new FormData();
+    fd.append("vacancy_id", currentVacancyId);
+    fd.append("file", file);
+    const res = await fetch(`${API}/api/screen/file`, {
+      method: "POST",
+      headers: { "X-Gemini-Key": getApiKey() },
+      body: fd,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showToast(data.detail || "Не удалось проскринить файл", "error");
+      return;
+    }
+    showToast(`Резюме проскринировано: ${data.name || "Кандидат"}`, "success");
+    await refreshData();
+  } catch (err) {
+    showToast("Ошибка сети: " + err.message, "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = orig;
+    e.target.value = "";
+  }
+}
+
 // ── Listeners ─────────────────────────────────────────────────────────────────
 
 function setupListeners() {
@@ -1176,6 +1275,18 @@ function setupListeners() {
   document.getElementById("btn-bulk-huntflow").addEventListener("click", bulkMarkForHuntflow);
   document.getElementById("btn-bulk-reject").addEventListener("click",   bulkMarkForReject);
   document.getElementById("btn-export").addEventListener("click",        exportToExcel);
+  document.getElementById("btn-screen-url").addEventListener("click",    openScreenUrlModal);
+  document.getElementById("btn-screen-file").addEventListener("click",   pickScreenFile);
+  document.getElementById("screen-file-input").addEventListener("change", onScreenFileSelected);
+  document.getElementById("btn-screen-url-run").addEventListener("click",  runScreenByUrl);
+  document.getElementById("btn-screen-url-cancel").addEventListener("click", closeScreenUrlModal);
+  document.getElementById("screen-url-close").addEventListener("click",     closeScreenUrlModal);
+  document.getElementById("screen-url-modal").addEventListener("click", e => {
+    if (e.target === e.currentTarget) closeScreenUrlModal();
+  });
+  document.getElementById("screen-url-input").addEventListener("keydown", e => {
+    if (e.key === "Enter") runScreenByUrl();
+  });
   document.getElementById("btn-rescreen-all").addEventListener("click", () => {
     if (!currentVacancyId) return;
     const n = allCandidates.filter(c => !c.is_trashed).length;
