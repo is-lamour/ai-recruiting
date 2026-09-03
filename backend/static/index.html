@@ -207,11 +207,8 @@
           <button id="btn-rescreen-all" class="btn btn-ghost" title="Переоценить всех кандидатов по текущим метрикам">
             ↺ Перескрининг всех
           </button>
-          <button id="btn-screen-url" class="btn btn-ghost" title="Скрининг резюме по ссылке (habr, linkedin и т.д.)">
-            🔗 По ссылке
-          </button>
-          <button id="btn-screen-file" class="btn btn-ghost" title="Скрининг резюме из файла (PDF / DOCX / TXT)">
-            📄 По файлу
+          <button id="btn-screen" class="btn btn-ghost" title="Импортировать резюме: по ссылке, из файла или вставить текст">
+            📥 Импорт резюме
           </button>
           <button id="btn-refresh" class="btn btn-ghost" title="Обновить данные">
             ↻ Обновить
@@ -296,28 +293,53 @@
     </div>
   </div>
 
-  <!-- Модалка скрининга по ссылке -->
-  <div id="screen-url-modal" class="modal-overlay hidden">
-    <div class="modal" style="max-width:520px">
-      <button class="modal-close" id="screen-url-close">✕</button>
-      <h3 style="margin-bottom:12px">🔗 Скрининг по ссылке</h3>
-      <p style="font-size:13px;color:#64748b;margin-bottom:12px">
-        Вставьте ссылку на резюме (habr, LinkedIn, блог, сайт и т.д.) — бэкенд
-        загрузит страницу, извлечёт текст и проскринит как обычное резюме.
-      </p>
-      <input type="text" id="screen-url-input" placeholder="https://..." style="width:100%;margin-bottom:10px" />
-      <input type="text" id="screen-url-name" placeholder="Имя кандидата (необязательно)" style="width:100%;margin-bottom:12px" />
-      <div id="screen-url-error" class="screen-error hidden"></div>
-      <div style="display:flex;gap:8px;align-items:center">
-        <button class="btn btn-primary" id="btn-screen-url-run">Скринить</button>
-        <button class="btn btn-ghost" id="btn-screen-url-cancel">Отмена</button>
-        <span id="screen-url-spinner" class="screen-spinner hidden"><span class="spinner"></span> Загружаем и скриним...</span>
+  <!-- Модалка импорта резюме: по ссылке / из файла / вставить текст -->
+  <div id="screen-modal" class="modal-overlay hidden">
+    <div class="modal" style="max-width:560px">
+      <button class="modal-close" id="screen-close">✕</button>
+      <h3 style="margin-bottom:14px">📥 Импорт резюме</h3>
+
+      <!-- Переключатель способа импорта -->
+      <div class="screen-tabs" id="screen-tabs">
+        <button class="screen-tab" data-mode="url">🔗 По ссылке</button>
+        <button class="screen-tab" data-mode="file">📄 Из файла</button>
+        <button class="screen-tab" data-mode="text">📝 Вставить текст</button>
+      </div>
+
+      <!-- Общий ввод имени (для всех режимов) -->
+      <input type="text" id="screen-name" placeholder="Имя кандидата (необязательно)" style="width:100%;margin-bottom:12px" />
+
+      <!-- Режим: по ссылке -->
+      <div class="screen-pane" id="pane-url">
+        <p class="screen-hint">Вставьте ссылку на резюме (habr, LinkedIn, блог, сайт и т.д.) — бэкенд загрузит страницу, извлечёт текст и проскринит.</p>
+        <input type="text" id="screen-url-input" placeholder="https://..." style="width:100%;margin-bottom:10px" />
+      </div>
+
+      <!-- Режим: из файла -->
+      <div class="screen-pane hidden" id="pane-file">
+        <p class="screen-hint">Выберите файл резюме: PDF, DOCX, TXT или MD.</p>
+        <input type="file" id="screen-file-input" accept=".pdf,.docx,.txt,.md,.text" style="margin-bottom:10px" />
+        <div id="screen-file-name" class="screen-file-name hidden"></div>
+      </div>
+
+      <!-- Режим: вставить текст -->
+      <div class="screen-pane hidden" id="pane-text">
+        <p class="screen-hint">Вставьте текст резюме — форматирование сохранится как есть.</p>
+        <textarea id="screen-text-input" rows="14" placeholder="Вставьте сюда текст резюме..."></textarea>
+      </div>
+
+      <div id="screen-error" class="screen-error hidden"></div>
+      <div id="screen-status" class="screen-file-name hidden"></div>
+
+      <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
+        <button class="btn btn-primary" id="btn-screen-run">Скринить</button>
+        <button class="btn btn-ghost" id="btn-screen-cancel">Отмена</button>
+        <span id="screen-spinner" class="screen-spinner hidden"><span class="spinner"></span> Скриним...</span>
       </div>
     </div>
   </div>
 
-  <input type="file" id="screen-file-input" accept=".pdf,.docx,.txt,.md,.text" style="display:none" />
 
-  <script src="/static/app.js?v=27"></script>
+  <script src="/static/app.js?v=28"></script>
 </body>
 </html>

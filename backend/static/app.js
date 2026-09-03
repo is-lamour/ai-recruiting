@@ -1056,39 +1056,68 @@ async function bulkMarkForReject() {
   await refreshData();
 }
 
-// ── Screen by URL / file ──────────────────────────────────────────────────────
+// ── Screen by URL / file / text (unified import modal) ───────────────────────
 
-function openScreenUrlModal() {
+let screenMode = "url";           // текущий режим импорта
+let _pendingScreenFile = null;    // выбранный файл (для режима "из файла")
+
+function openScreenModal() {
   if (!currentVacancyId) { alert("Сначала выберите вакансию"); return; }
+  // сброс состояния
   document.getElementById("screen-url-input").value = "";
-  document.getElementById("screen-url-name").value = "";
-  setScreenUrlError("");
-  document.getElementById("screen-url-spinner").classList.add("hidden");
-  document.getElementById("btn-screen-url-run").disabled = false;
-  document.getElementById("screen-url-modal").classList.remove("hidden");
+  document.getElementById("screen-text-input").value = "";
+  document.getElementById("screen-name").value = "";
+  const fileInput = document.getElementById("screen-file-input");
+  fileInput.value = "";
+  _pendingScreenFile = null;
+  document.getElementById("screen-file-name").classList.add("hidden");
+  document.getElementById("screen-file-name").textContent = "";
+  setScreenStatus("");
+  hideScreenError();
+  document.getElementById("screen-spinner").classList.add("hidden");
+  document.getElementById("btn-screen-run").disabled = false;
+  setScreenMode("url");
+  document.getElementById("screen-modal").classList.remove("hidden");
   document.getElementById("screen-url-input").focus();
 }
 
-function closeScreenUrlModal() {
-  document.getElementById("screen-url-modal").classList.add("hidden");
+function closeScreenModal() {
+  document.getElementById("screen-modal").classList.add("hidden");
 }
 
-function setScreenUrlError(msg) {
-  const el = document.getElementById("screen-url-error");
+function setScreenMode(mode) {
+  screenMode = mode;
+  document.querySelectorAll(".screen-tab").forEach(t =>
+    t.classList.toggle("active", t.dataset.mode === mode));
+  document.getElementById("pane-url").classList.toggle("hidden", mode !== "url");
+  document.getElementById("pane-file").classList.toggle("hidden", mode !== "file");
+  document.getElementById("pane-text").classList.toggle("hidden", mode !== "text");
+}
+
+function setScreenError(msg) {
+  const el = document.getElementById("screen-error");
+  el.textContent = msg;
+  el.classList.toggle("hidden", !msg);
+}
+function hideScreenError() { setScreenError(""); }
+function setScreenStatus(msg) {
+  const el = document.getElementById("screen-status");
   el.textContent = msg;
   el.classList.toggle("hidden", !msg);
 }
 
+function screenBusy(busy) {
+  document.getElementById("btn-screen-run").disabled = busy;
+  document.getElementById("screen-spinner").classList.toggle("hidden", !busy);
+}
+
 async function runScreenByUrl() {
-  if (!currentVacancyId) return;
   const url = document.getElementById("screen-url-input").value.trim();
-  if (!url) { setScreenUrlError("Введите ссылку"); return; }
+  if (!url) { setScreenError("Введите ссылку"); return; }
 
-  const btn = document.getElementById("btn-screen-url-run");
-  btn.disabled = true;
-  document.getElementById("screen-url-spinner").classList.remove("hidden");
-  setScreenUrlError("");
-
+  screenBusy(true);
+  hideScreenError();
+  setScreenStatus("Загружаем страницу и скриним...");
   try {
     const res = await fetch(`${API}/api/screen/url`, {
       method: "POST",
@@ -1096,63 +1125,106 @@ async function runScreenByUrl() {
       body: JSON.stringify({
         vacancy_id: currentVacancyId,
         url: url,
-        name: document.getElementById("screen-url-name").value.trim() || null,
+        name: document.getElementById("screen-name").value.trim() || null,
       }),
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      setScreenUrlError(data.detail || "Не удалось проскринить по ссылке");
-      return;
-    }
-    closeScreenUrlModal();
+    if (!res.ok) { setScreenError(data.detail || "Не удалось проскринить по ссылке"); return; }
+    closeScreenModal();
     showToast(`Резюме проскринировано: ${data.name || "Кандидат"}`, "success");
     await refreshData();
   } catch (e) {
-    setScreenUrlError("Ошибка сети: " + e.message);
+    setScreenError("Ошибка сети: " + e.message);
   } finally {
-    btn.disabled = false;
-    document.getElementById("screen-url-spinner").classList.add("hidden");
+    screenBusy(false);
+    setScreenStatus("");
   }
 }
 
-function pickScreenFile() {
-  if (!currentVacancyId) { alert("Сначала выберите вакансию"); return; }
-  document.getElementById("screen-file-input").value = "";
-  document.getElementById("screen-file-input").click();
+function runScreenByFile() {
+  if (!_pendingScreenFile) { setScreenError("Выберите файл"); return; }
+  const file = _pendingScreenFile;
+
+  screenBusy(true);
+  hideScreenError();
+  setScreenStatus(`Скриним файл «${file.name}»...`);
+  const fd = new FormData();
+  fd.append("vacancy_id", currentVacancyId);
+  fd.append("file", file);
+  if (document.getElementById("screen-name").value.trim()) {
+    fd.append("name", document.getElementById("screen-name").value.trim());
+  }
+
+  fetch(`${API}/api/screen/file`, {
+    method: "POST",
+    headers: { "X-Gemini-Key": getApiKey() },
+    body: fd,
+  })
+    .then(res => res.json().catch(() => ({})))
+    .then(async data => {
+      if (!data || data.detail) {
+        setScreenError((data && data.detail) || "Не удалось проскринить файл");
+        return;
+      }
+      closeScreenModal();
+      showToast(`Резюме проскринировано: ${data.name || "Кандидат"}`, "success");
+      await refreshData();
+    })
+    .catch(err => setScreenError("Ошибка сети: " + err.message))
+    .finally(() => { screenBusy(false); setScreenStatus(""); });
 }
 
-async function onScreenFileSelected(e) {
-  const file = e.target.files && e.target.files[0];
-  if (!file || !currentVacancyId) return;
+async function runScreenByText() {
+  const text = document.getElementById("screen-text-input").value;
+  if (!text.trim()) { setScreenError("Вставьте текст резюме"); return; }
 
-  const btn = document.getElementById("btn-screen-file");
-  const orig = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = "📄 Скриним...";
-
+  screenBusy(true);
+  hideScreenError();
+  setScreenStatus("Скриним вставленный текст...");
   try {
-    const fd = new FormData();
-    fd.append("vacancy_id", currentVacancyId);
-    fd.append("file", file);
-    const res = await fetch(`${API}/api/screen/file`, {
+    const res = await fetch(`${API}/api/screen`, {
       method: "POST",
-      headers: { "X-Gemini-Key": getApiKey() },
-      body: fd,
+      headers: apiHeaders(),
+      body: JSON.stringify({
+        vacancy_id: currentVacancyId,
+        hh_url: "имя/текст",
+        name: document.getElementById("screen-name").value.trim() || null,
+        resume_text: text,
+      }),
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      showToast(data.detail || "Не удалось проскринить файл", "error");
-      return;
-    }
+    if (!res.ok) { setScreenError(data.detail || "Не удалось проскринить текст"); return; }
+    closeScreenModal();
     showToast(`Резюме проскринировано: ${data.name || "Кандидат"}`, "success");
     await refreshData();
-  } catch (err) {
-    showToast("Ошибка сети: " + err.message, "error");
+  } catch (e) {
+    setScreenError("Ошибка сети: " + e.message);
   } finally {
-    btn.disabled = false;
-    btn.textContent = orig;
-    e.target.value = "";
+    screenBusy(false);
+    setScreenStatus("");
   }
+}
+
+function onScreenFileSelected(e) {
+  const file = e.target.files && e.target.files[0];
+  _pendingScreenFile = file || null;
+  const label = document.getElementById("screen-file-name");
+  if (file) {
+    label.textContent = "📄 " + file.name;
+    label.classList.remove("hidden");
+  } else {
+    label.textContent = "";
+    label.classList.add("hidden");
+  }
+  hideScreenError();
+}
+
+async function runScreen() {
+  if (!currentVacancyId) return;
+  hideScreenError();
+  if (screenMode === "url")      { await runScreenByUrl(); }
+  else if (screenMode === "file"){ runScreenByFile(); }
+  else if (screenMode === "text"){ await runScreenByText(); }
 }
 
 // ── Listeners ─────────────────────────────────────────────────────────────────
@@ -1277,17 +1349,22 @@ function setupListeners() {
   document.getElementById("btn-bulk-huntflow").addEventListener("click", bulkMarkForHuntflow);
   document.getElementById("btn-bulk-reject").addEventListener("click",   bulkMarkForReject);
   document.getElementById("btn-export").addEventListener("click",        exportToExcel);
-  document.getElementById("btn-screen-url").addEventListener("click",    openScreenUrlModal);
-  document.getElementById("btn-screen-file").addEventListener("click",   pickScreenFile);
+  document.getElementById("btn-screen").addEventListener("click", openScreenModal);
+  document.querySelectorAll(".screen-tab").forEach(t =>
+    t.addEventListener("click", () => setScreenMode(t.dataset.mode)));
   document.getElementById("screen-file-input").addEventListener("change", onScreenFileSelected);
-  document.getElementById("btn-screen-url-run").addEventListener("click",  runScreenByUrl);
-  document.getElementById("btn-screen-url-cancel").addEventListener("click", closeScreenUrlModal);
-  document.getElementById("screen-url-close").addEventListener("click",     closeScreenUrlModal);
-  document.getElementById("screen-url-modal").addEventListener("click", e => {
-    if (e.target === e.currentTarget) closeScreenUrlModal();
+  document.getElementById("btn-screen-run").addEventListener("click",  runScreen);
+  document.getElementById("btn-screen-cancel").addEventListener("click", closeScreenModal);
+  document.getElementById("screen-close").addEventListener("click",     closeScreenModal);
+  document.getElementById("screen-modal").addEventListener("click", e => {
+    if (e.target === e.currentTarget) closeScreenModal();
   });
   document.getElementById("screen-url-input").addEventListener("keydown", e => {
-    if (e.key === "Enter") runScreenByUrl();
+    if (e.key === "Enter") runScreen();
+  });
+  document.getElementById("screen-text-input").addEventListener("keydown", e => {
+    // Ctrl/Cmd+Enter — скринить из текстового поля
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") runScreen();
   });
   document.getElementById("btn-rescreen-all").addEventListener("click", () => {
     if (!currentVacancyId) return;

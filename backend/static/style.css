@@ -1313,8 +1313,8 @@ main { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
   .score-badge { display: none; }
 }
 
-/* ── Screen by URL / file ─────────────────────────────────────────────────── */
-#screen-url-input, #screen-url-name {
+/* ── Screen import modal: inputs ──────────────────────────────────────────── */
+#screen-url-input, #screen-name {
   padding: 8px 10px;
   border: 1px solid var(--border, #cbd5e1);
   border-radius: 8px;
@@ -1322,6 +1322,7 @@ main { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
   background: var(--card, #fff);
   color: var(--text, #0f172a);
 }
+#screen-name { box-sizing: border-box; }
 .screen-error {
   background: #fef2f2;
   color: #b91c1c;
@@ -1337,4 +1338,56 @@ main { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
   gap: 8px;
   font-size: 13px;
   color: #64748b;
+}
+
+/* ── Screen import modal: tabs / panes ──────────────────────────────────── */
+.screen-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.screen-tab {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+}
+.screen-tab:hover { border-color: #3b82f6; color: #1d4ed8; }
+.screen-tab.active {
+  background: #eff6ff;
+  border-color: #3b82f6;
+  color: #1d4ed8;
+  font-weight: 600;
+}
+.screen-hint {
+  font-size: 13px;
+  color: #64748b;
+  margin-bottom: 10px;
+}
+.screen-pane textarea {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+  box-sizing: border-box;
+}
+.screen-pane textarea:focus { border-color: #3b82f6; }
+.screen-file-name {
+  font-size: 13px;
+  color: #166534;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
 }
