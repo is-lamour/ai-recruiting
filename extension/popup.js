@@ -460,7 +460,20 @@ async function executeRejections() {
       action: "execute_rejections",
       candidates,
     });
-    alert(`Выполнено: ${result.rejected} из ${result.total} отказов`);
+
+    let msg = `Выполнено: ${result.rejected} из ${result.total} отказов`;
+    if (result.remaining > 0) {
+      const bits = [];
+      if (result.notFound > 0) {
+        bits.push(`не найдено на страницах hh: ${result.notFound}`);
+        if (result.notFoundNames && result.notFoundNames.length) {
+          bits.push("кто: " + result.notFoundNames.join(", "));
+        }
+      }
+      if (result.attempted > 0) bits.push(`карточка была, но отказ не прошёл: ${result.attempted}`);
+      msg += "\nНе обработано: " + result.remaining + (bits.length ? " (" + bits.join("; ") + ")" : "");
+    }
+    alert(msg);
     await loadPendingActions();
   } catch (e) {
     alert("Ошибка: " + e.message);

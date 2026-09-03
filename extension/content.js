@@ -503,53 +503,155 @@ function extractResumeData(doc) {
 // ── Отказы на HH ─────────────────────────────────────────────────────────────
 
 async function executeRejections(candidates, sendResponse) {
-  const isConsider = /collection=consider/i.test(window.location.href);
-
-  // Фаза 1: отмечаем чекбоксы на карточках
-  const selected = [];
-  for (const candidate of candidates) {
-    const ok = await tickCandidateCheckbox(candidate.hh_url);
-    if (ok) selected.push(candidate);
-    await sleep(150);
-  }
-
-  if (!selected.length) {
-    sendResponse({ rejected: 0, total: candidates.length });
+  // ── Основной путь: отказ напрямую через API hh (механика скрининга).
+  //    DOM-карточек в откликах может просто не быть (hh рендерит ~7 из 30+),
+  //    поэтому API — надёжный способ увидеть/отказать всех сразу.
+  const apiRes = await rejectByApi(candidates);
+  if (apiRes && apiRes.ok) {
+    console.log(`[HH Reject] API-отказы: attempted=${apiRes.attempted}, rejected=${apiRes.rejected}`);
+    const total = candidates.length;
+    const remaining = total - apiRes.rejected;
+    sendResponse({
+      rejected: apiRes.rejected,
+      total,
+      remaining: Math.max(0, remaining),
+      notFound: Math.max(0, remaining),
+      attempted: apiRes.attempted,
+      notFoundNames: [],
+    });
     return;
   }
 
-  let rejected = 0;
+  // ── Fallback: старый DOM-путь (вкладка "Подумать" и прочие случаи) ──────────
+  const isConsider = /collection=consider/i.test(window.location.href);
 
-  if (isConsider) {
-    // Вкладка "Подумать" — нет bulk-кнопки, кликаем "Отказать" на каждой карточке
-    for (const c of selected) {
-      const ok = await rejectCandidatePerCard(c.hh_url);
-      if (ok) {
-        try {
-          await bgPatch(`/api/candidates/${c.id}`, { status: "rejected" });
-          rejected++;
-        } catch (e) {
-          console.warn("[HH Reject] patch error:", e.message);
+  // hh.kz рендерит список откликов «виртуально»: в DOM есть только карточки,
+  // попавшие в viewport, остальные подгружаются по мере прокрутки. При этом
+  // выделение чекбоксов в списке сохраняется при прокрутке.
+  // Поэтому: прокручиваем весь список, отмечая целевых по мере их появления,
+  // затем одним нажатием bulk-кнопки отклоняем всех сразу.
+
+  let rejected = 0;
+  const total = candidates.length;
+  const pending = candidates.slice();   // ещё не отмеченные
+  const ticked = new Set();             // id, чьи чекбоксы уже отмечены
+  const scroller = getResponseScroller();
+
+  let noProgress = 0;                   // подряд прокруток без новых найденных
+  const maxNoProgress = 20;             // страховка от бесконечной прокрутки
+
+  while (pending.length > 0 && noProgress < maxNoProgress) {
+    const foundThisRound = pending.filter(c => !ticked.has(c.id) && cardInDOM(c.hh_url));
+    console.log(`[HH Reject] pending=${pending.length}, нашлось в DOM=${foundThisRound.length}`);
+
+    let madeProgress = false;
+    for (const c of foundThisRound) {
+      if (isConsider) {
+        // Вкладка "Подумать" — нет bulk-кнопки, отказ по каждой карточке
+        const ok = await rejectCandidatePerCard(c.hh_url);
+        if (ok) {
+          ticked.add(c.id);
+          madeProgress = true;
+          try {
+            await bgPatch(`/api/candidates/${c.id}`, { status: "rejected" });
+            rejected++;
+          } catch (e) {
+            console.warn("[HH Reject] patch error:", e.message);
+          }
         }
+        await sleep(400);
+      } else {
+        // Вкладка "Отклики" — отмечаем чекбокс
+        const ok = await tickCandidateCheckbox(c.hh_url);
+        if (ok) {
+          ticked.add(c.id);
+          madeProgress = true;
+        }
+        await sleep(120);
       }
+    }
+
+    const before = pending.length;
+    const remaining = pending.filter(c => !ticked.has(c.id));
+    if (remaining.length < before) madeProgress = true;
+    pending.length = 0;
+    pending.push(...remaining);
+
+    if (!madeProgress) {
+      // Новых не нашли — прокручиваем, чтобы hh подгрузил следующие карточки
+      const moved = await scrollListDown(scroller);
+      if (!moved) noProgress++;
+      await sleep(350);
+    } else {
+      noProgress = 0;
       await sleep(400);
     }
+  }
+
+  if (isConsider) {
+    // Уже отказали по-карточкам (патчи выше)
   } else {
-    // Вкладка "Отклики" — bulk кнопка responses-batch-reject
-    const bulkOk = await clickBulkDiscard();
-    if (bulkOk) {
-      for (const c of selected) {
-        try {
-          await bgPatch(`/api/candidates/${c.id}`, { status: "rejected" });
-          rejected++;
-        } catch (e) {
-          console.warn("[HH Reject] patch error:", e.message);
+    // Отклики — жмём bulk-кнопку по всем отмеченным
+    if (ticked.size > 0) {
+      const bulkOk = await clickBulkDiscard();
+      if (bulkOk) {
+        for (const c of candidates) {
+          if (!ticked.has(c.id)) continue;
+          try {
+            await bgPatch(`/api/candidates/${c.id}`, { status: "rejected" });
+            rejected++;
+          } catch (e) {
+            console.warn("[HH Reject] patch error:", e.message);
+          }
         }
       }
     }
   }
 
-  sendResponse({ rejected, total: candidates.length });
+  console.log(`[HH Reject] ГОТОВО: rejected=${rejected}, total=${total}, отмечено=${ticked.size}`);
+  const notFound = candidates.filter(c => !ticked.has(c.id));
+  sendResponse({
+    rejected,
+    total,
+    remaining: notFound.length,
+    notFound: notFound.length,
+    attempted: ticked.size - rejected,
+    notFoundNames: notFound.slice(0, 10).map(c => c.name || c.hh_url),
+  });
+}
+
+// Есть ли карточка кандидата в текущем DOM
+function cardInDOM(resumeUrl) {
+  const resumeId = resumeIdFromUrl(resumeUrl);
+  return !!resumeId && !!document.querySelector(`a[href*="${resumeId}"]`);
+}
+
+function resumeIdFromUrl(resumeUrl) {
+  return (resumeUrl || "").split("/resume/")[1]?.split("?")[0]?.split("/")[0];
+}
+
+// Ищем реально скроллящийся элемент списка (может быть сам window или вложенный контейнер)
+function getResponseScroller() {
+  const candidates = [document.scrollingElement, document.documentElement, document.body];
+  document.querySelectorAll('[data-qa*="vacancy-respons"], [data-qa*="response"], [class*="respond"], main, [class*="scroll"]').forEach(el => {
+    if (el && el.scrollHeight > el.clientHeight + 30) candidates.push(el);
+  });
+  for (let i = candidates.length - 1; i >= 0; i--) {
+    const el = candidates[i];
+    if (el && el.scrollHeight > el.clientHeight + 30) return el;
+  }
+  return document.scrollingElement || document.documentElement;
+}
+
+// Прокручиваем список вниз; возвращаем true, если получилось подвинуть скролл
+async function scrollListDown(scroller) {
+  const before = scroller.scrollTop;
+  scroller.scrollTop = scroller.scrollHeight;
+  for (let i = 0; i < 15; i++) {
+    await sleep(200);
+    if (scroller.scrollTop > before) return true;
+  }
+  return false;
 }
 
 async function tickCandidateCheckbox(resumeUrl) {
@@ -690,6 +792,148 @@ async function rejectCandidatePerCard(resumeUrl) {
   }
 
   return true;
+}
+
+// ── Отказы через API hh (та же механика, что и скрининг: полный список из
+//    candidates_list, отказ напрямую в change_topic — без поиска карточек в DOM,
+//    который hh рендерит лишь частично и которых в DOM может просто не быть) ────
+
+// CSRF-токен hh живёт в cookie _xsrf
+function getXsrf() {
+  return (document.cookie.match(/(?:^|;\s*)_xsrf=([^;]+)/) || [])[1] || "";
+}
+
+// Получить vacancyId из URL страницы откликов (или из query кандидата)
+function getVacancyId(url) {
+  const m = (url || window.location.href).match(/[?&]vacancyId=(\d+)/);
+  return m ? m[1] : "";
+}
+
+// Тянем полный список откликов вакансии из внутреннего API hh (как в скрининге)
+// и строим карту: hash резюме -> { topicId, resumeId, discardStageId, name }
+async function loadResponsesMap(vacancyId) {
+  const apiUrl = `${window.location.origin}/shards/employer/vacancyresponses/candidates_list?` +
+    new URLSearchParams({ vacancyId, order: "RELEVANCE", limit: "50" });
+  const res = await fetch(apiUrl, { credentials: "include" });
+  if (!res.ok) throw new Error(`candidates_list HTTP ${res.status}`);
+  const j = await res.json();
+
+  const cands = j.contactCenterCandidates?.candidates || [];
+  const m = j.vacancyToResumeSkillMatch || {};
+  const hashByRid = {};
+  for (const [rid, v] of Object.entries(m)) {
+    if (v && v.resume_id) hashByRid[rid] = v.resume_id;
+    else if (v && typeof v === "string") hashByRid[rid] = v;
+  }
+
+  const map = new Map();
+  for (const c of cands) {
+    const hash = hashByRid[c.resumeId] || c.resumeHash;
+    if (!hash) continue;
+    const discard = (c.stages || []).find(s => s.state === "DISCARD_BY_EMPLOYER");
+    map.set(hash, {
+      topicId: c.topicId,
+      resumeId: c.resumeId,
+      discardStageId: discard ? discard.funnelStageId : null,
+      name: c.name || "",
+    });
+  }
+  return map;
+}
+
+// Сама отправка отказа по одному кандидату; возвращает true при успехе
+async function apiRejectOne(vacancyId, xsrf, info, hash, mailText) {
+  if (!info || !info.topicId || !info.discardStageId) {
+    console.log(`[HH Reject] нет данных для отказа: ${hash}`);
+    return false;
+  }
+  const headers = {
+    "X-hhtmSource": "employer_vacancy_responses",
+    "X-hhtmFrom": "employer_vacancies",
+    "Accept": "application/json",
+    "X-Requested-With": "XMLHttpRequest",
+    "X-Xsrftoken": xsrf,
+  };
+  const fd = new FormData();
+  fd.set("vacancyId", String(vacancyId));
+  fd.set("state", "discard_by_employer");
+  fd.set("funnelStageId", String(info.discardStageId));
+  fd.set("funnelStageKey", "null");
+  fd.set("messageGroupVisible", "true");
+  fd.set("employerManagerTemplateId", "response_discard_mail_15609192_primary");
+  fd.set("mailText", mailText);
+  fd.set("quickTransferToStageEnabled", "false");
+  fd.set("resumeHash", hash);
+  fd.set("t", String(info.topicId));
+
+  const res = await fetch(`${window.location.origin}/employer/negotiations/change_topic`, {
+    method: "POST",
+    credentials: "include",
+    headers,
+    body: fd,
+  });
+  if (!res.ok) {
+    console.warn(`[HH Reject] отказ не прошёл (HTTP ${res.status}): ${hash}`);
+    return false;
+  }
+  try {
+    const data = await res.json();
+    if (data.state !== "discard_by_employer") {
+      console.warn(`[HH Reject] неожиданный ответ hh для ${hash}:`, data);
+      return false;
+    }
+  } catch (e) { /* ответ не JSON — считаем успехом, т.к. 2xx */ }
+  console.log(`[HH Reject] API-отказ отправлен: ${hash} (topic ${info.topicId})`);
+  return true;
+}
+
+// Отказать списку кандидатов напрямую через API hh.
+// candidates: [{id, hh_url}]. Возвращает {ok} — true, если API-путь применим.
+async function rejectByApi(candidates) {
+  const vacancyId = getVacancyId(window.location.href);
+  const onResponsesPage = /vacancyresponses/i.test(window.location.pathname) && vacancyId;
+  // fallback: vacancyId может прийти в hh_url кандидата
+  const hrefVacancyId = candidates.length
+    ? getVacancyId(candidates[0].hh_url || "")
+    : "";
+  const vid = vacancyId || hrefVacancyId;
+  if (!vid) return false;
+
+  // Резолвим хэши
+  const hashes = candidates.map(c => {
+    const u = c.hh_url || "";
+    return u.split("/resume/")[1]?.split("?")[0]?.split("/")[0] || null;
+  }).filter(Boolean);
+
+  const xsrf = getXsrf();
+  if (!xsrf) return false;
+
+  let map;
+  try {
+    map = await loadResponsesMap(vid);
+  } catch (e) {
+    console.warn("[HH Reject] candidates_list не сработал, переходим к DOM:", e);
+    return false;
+  }
+
+  let attempted = 0, rejected = 0;
+  for (const c of candidates) {
+    const hash = (c.hh_url || "").split("/resume/")[1]?.split("?")[0]?.split("/")[0];
+    if (!hash) continue;
+    const info = map.get(hash);
+    attempted++;
+    const mailText =
+      "Здравствуйте! Благодарим за интерес к нашей вакансии. " +
+      "К сожалению, мы не готовы продолжить рассмотрение вашего резюме.";
+    const ok = await apiRejectOne(vid, xsrf, info, hash, mailText);
+    if (ok) {
+      rejected++;
+      try { await bgPatch(`/api/candidates/${c.id}`, { status: "rejected" }); }
+      catch (e) { console.warn("[HH Reject] patch error:", e.message); }
+    }
+    await sleep(350);
+  }
+  return { ok: true, attempted, rejected, loadedCount: map.size };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
