@@ -4,8 +4,15 @@ setlocal enabledelayedexpansion
 set ROOT=%~dp0
 set BACKEND=%ROOT%backend
 
-REM Если есть python\ (дистрибутив) — используем его, иначе системный Python
-if exist "%ROOT%python\python.exe" (
+REM Приоритет интерпретатора:
+REM   1) .venv в корне проекта или на уровень выше
+REM   2) python\ (бандл-дистрибутив), если есть
+REM   3) системный Python (python в PATH)
+if exist "%ROOT%.venv\Scripts\python.exe" (
+    set PYTHON=%ROOT%.venv\Scripts\python.exe
+) else if exist "%ROOT%..\.venv\Scripts\python.exe" (
+    set PYTHON=%ROOT%..\.venv\Scripts\python.exe
+) else if exist "%ROOT%python\python.exe" (
     set PYTHON=%ROOT%python\python.exe
 ) else (
     set PYTHON=python
