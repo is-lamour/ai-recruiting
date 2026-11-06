@@ -676,18 +676,24 @@ def bulk_action(data: BulkAction):
     conn = get_db()
     try:
         placeholders = ",".join("?" * len(data.ids))
+        affected = len(data.ids)
         if data.action == "delete":
             conn.execute(
                 f"UPDATE candidates SET is_trashed = 1 WHERE id IN ({placeholders})",
                 data.ids,
             )
         elif data.action == "to_reject":
-            conn.execute(
-                f"UPDATE candidates SET status = 'to_reject' WHERE id IN ({placeholders})",
+            # Нельзя повторно ставить «на отказ» кандидатов, которых уже отправили
+            # (rejected/huntflow_sent): иначе они снова попадут в список отказов,
+            # а на hh они уже в статусе отказа — повторный отказ не пройдёт.
+            cur = conn.execute(
+                f"UPDATE candidates SET status = 'to_reject' "
+                f"WHERE id IN ({placeholders}) AND status NOT IN ('rejected', 'huntflow_sent')",
                 data.ids,
             )
+            affected = cur.rowcount
         conn.commit()
-        return {"affected": len(data.ids)}
+        return {"affected": affected}
     finally:
         conn.close()
 

@@ -876,8 +876,10 @@ function buildCard(c) {
   return `
   <div class="candidate-card status-${c.status}${selectedIds.has(c.id) ? " selected" : ""}" data-id="${c.id}">
     <div class="card-select">
-      <input type="checkbox" class="candidate-cb" data-id="${c.id}" ${checked} />
-      <div class="score-badge ${cat}">${c.score ?? "—"}</div>
+      ${(c.status === "rejected" || c.status === "huntflow_sent")
+        ? `<div class="score-badge ${cat}">${c.score ?? "—"}</div>`
+        : `<input type="checkbox" class="candidate-cb" data-id="${c.id}" ${checked} />
+           <div class="score-badge ${cat}">${c.score ?? "—"}</div>`}
     </div>
     <div class="card-body">
       <div class="card-header">
@@ -1392,9 +1394,20 @@ function setupListeners() {
   document.getElementById("btn-select-all").addEventListener("click", () => {
     const list = document.getElementById("candidates-list");
     list.querySelectorAll(".candidate-cb").forEach(cb => {
-      cb.checked = true;
-      selectedIds.add(+cb.dataset.id);
-      cb.closest(".candidate-card")?.classList.add("selected");
+      const id = +cb.dataset.id;
+      // Отмечаем только тех, кого ещё не обработали (status new). Уже отправленных
+      // на отказ/в Huntflow не трогаем — иначе повторно поставим их «на отказ»
+      // там, где hh уже отказал, и отказ снова не пройдёт.
+      const c = allCandidates.find(x => x.id === id);
+      const actionable = c && c.status === "new";
+      cb.checked = actionable;
+      if (actionable) {
+        selectedIds.add(id);
+        cb.closest(".candidate-card")?.classList.add("selected");
+      } else {
+        selectedIds.delete(id);
+        cb.closest(".candidate-card")?.classList.remove("selected");
+      }
     });
     updateBulkPanel();
   });
