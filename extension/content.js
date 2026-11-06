@@ -843,11 +843,15 @@ async function loadResponsesMap(vacancyId) {
   for (const c of cands) {
     const hash = hashByRid[c.resumeId] || c.resumeHash;
     if (!hash) continue;
-    const discard = (c.stages || []).find(s => s.state === "DISCARD_BY_EMPLOYER");
+    // hh переструктурировал ответ: массива stages[] больше нет. Теперь id стадии
+    // отказа для discard_by_employer лежит в negotiationLinks.discard.stateLinks.
+    const discardLink = (c.negotiationLinks?.discard?.stateLinks || [])
+      .find(s => String(s.state).toLowerCase() === "discard_by_employer");
+    const discardStageId = discardLink ? discardLink.id : null;
     map.set(hash, {
       topicId: c.topicId,
       resumeId: c.resumeId,
-      discardStageId: discard ? discard.funnelStageId : null,
+      discardStageId,
       name: c.name || "",
     });
   }
@@ -875,7 +879,7 @@ async function apiRejectOne(vacancyId, xsrf, info, hash, mailText) {
   fd.set("messageGroupVisible", "true");
   fd.set("employerManagerTemplateId", "response_discard_mail_15609192_primary");
   fd.set("mailText", mailText);
-  fd.set("quickTransferToStageEnabled", "false");
+  fd.set("quickTransferToStageEnabled", "true");
   fd.set("resumeHash", hash);
   fd.set("t", String(info.topicId));
 
