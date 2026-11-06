@@ -106,9 +106,22 @@ hh требует заголовок `X-Xsrftoken`, иначе `403 Forbidden`. 
 `contactCenterCandidates.candidates[]`, для каждого:
 - `topicId` → это будущий `t`;
 - hash резюме — через `vacancyToResumeSkillMatch[resumeId].resume_id`;
-- стадию отказа: `c.stages.find(s => s.state === "DISCARD_BY_EMPLOYER").funnelStageId`.
+- стадию отказа — из `negotiationLinks.discard.stateLinks`:
+  ```js
+  const discardLink = (c.negotiationLinks?.discard?.stateLinks || [])
+    .find(s => String(s.state).toLowerCase() === "discard_by_employer");
+  const discardStageId = discardLink ? discardLink.id : null;
+  ```
+  ⚠️ **Сменился источник с ноября 2026.** Раньше стадия бралась из массива
+  `c.stages.find(s => s.state === "DISCARD_BY_EMPLOYER").funnelStageId`,
+  но hh убрал `stages[]`. Теперь у кандидата `funnelStage` — одиночный объект
+  (текущая стадия), а все стадии лежат в `negotiationLinks.<stage>.stateLinks[]`,
+  где поле `id` и есть `funnelStageId` (например `92013664` для `discard_by_employer`).
 
 Результат — `Map<hash, {topicId, resumeId, discardStageId}>`.
+
+> Про `mailText`: при появлении `MAIL_TEXT_EMPTY` просто дай непустой текст.
+> Про `r`: параметр `r=…` в POST `change_topic` не отправляется (он только в GET-ссылках).
 
 ### Шаг C — сам отказ
 Для каждого кандидата отправляем:
