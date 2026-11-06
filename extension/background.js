@@ -1,4 +1,4 @@
-const API = "http://localhost:8000";
+const API = "http://localhost:8001";
 
 async function apiHeaders(extra = {}) {
   const d = await chrome.storage.local.get("geminiApiKey");

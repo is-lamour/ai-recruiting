@@ -50,10 +50,10 @@
 ```bash
 pip install -r backend/requirements.txt
 cd backend
-python -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload
+python -m uvicorn main:app --host 127.0.0.1 --port 8001 --reload
 ```
 
-Дашборд доступен по адресу: **<http://localhost:8000>**
+Дашборд доступен по адресу: **<http://localhost:8001>**
 
 ### 3. Установите расширение Chrome
 
@@ -158,7 +158,7 @@ Summary — это сжатое описание требований (до 700 
 
 ### Просмотр результатов
 
-Нажмите **📊 Дашборд** — откроется `http://localhost:8000` с результатами по выбранной вакансии.
+Нажмите **📊 Дашборд** — откроется `http://localhost:8001` с результатами по выбранной вакансии.
 
 ### Массовые действия
 
@@ -171,7 +171,7 @@ Summary — это сжатое описание требований (до 700 
 
 ## Дашборд
 
-Веб-интерфейс на `http://localhost:8000`. Показывает всех кандидатов по выбранной вакансии.
+Веб-интерфейс на `http://localhost:8001`. Показывает всех кандидатов по выбранной вакансии.
 
 ### Категории кандидатов
 
@@ -249,7 +249,7 @@ Summary — это сжатое описание требований (до 700 
 extension/          — Chrome расширение (Manifest V3)
   popup.js          — интерфейс расширения
   content.js        — инжектируется в hh.kz, собирает резюме
-  background.js     — service worker, CORS-прокси к localhost:8000
+  background.js     — service worker, CORS-прокси к localhost:8001
   dashboard_bridge.js
 
 backend/            — FastAPI сервер
@@ -269,12 +269,12 @@ hh.kz (страница откликов)
   → background.js (CORS-прокси) → POST /api/screen
   → backend: ai.screen_resume() → Gemini API
   → результат сохраняется в SQLite
-  → дашборд http://localhost:8000 показывает результаты
+  → дашборд http://localhost:8001 показывает результаты
 ```
 
 ### Почему нужен background.js
 
-Контент-скрипты на hh.kz не могут напрямую обращаться к `localhost:8000` из-за CSP. `background.js` выступает прокси: принимает сообщения от `content.js` и выполняет реальные fetch-запросы к бэкенду.
+Контент-скрипты на hh.kz не могут напрямую обращаться к `localhost:8001` из-за CSP. `background.js` выступает прокси: принимает сообщения от `content.js` и выполняет реальные fetch-запросы к бэкенду.
 
 ### Статусы кандидата
 
@@ -287,7 +287,7 @@ new → to_huntflow → huntflow_sent
 
 ## API
 
-Все эндпоинты бэкенда (`http://localhost:8000`):
+Все эндпоинты бэкенда (`http://localhost:8001`):
 
 ### Вакансии
 

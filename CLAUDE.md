@@ -10,9 +10,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Install dependencies
 pip install -r backend/requirements.txt
 
-# Start the backend server (http://localhost:8000)
+# Start the backend server (http://localhost:8001)
 cd backend
-python -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload
+python -m uvicorn main:app --host 127.0.0.1 --port 8001 --reload
 
 # Or use the convenience script from the project root (Windows)
 start.bat
@@ -45,7 +45,7 @@ Manifest V3 extension targeting hh.kz. Three-layer architecture:
 
 - **`popup.js`** — the extension popup UI. Manages vacancy selection, triggers screening, shows progress, and initiates bulk rejections/Huntflow sends.
 - **`content.js`** — injected into hh.kz pages. Does the actual work: collects resume links from the DOM (handles pagination up to 20 pages), fetches each resume HTML via `fetch` with `credentials: include`, extracts text, and POSTs to the backend `/api/screen`. Sends progress updates via `chrome.storage.session`. Also handles automated rejections by clicking the HH "discard" button in the DOM.
-- **`background.js`** (service worker) — CORS proxy between content script and backend. Content script cannot call `localhost:8000` directly due to CSP, so it sends messages (`api_get`, `api_post`, `api_patch`) to background which makes the actual fetch. Also relays `chrome.storage.session` reads for cancel/progress state.
+- **`background.js`** (service worker) — CORS proxy between content script and backend. Content script cannot call `localhost:8001` directly due to CSP, so it sends messages (`api_get`, `api_post`, `api_patch`) to background which makes the actual fetch. Also relays `chrome.storage.session` reads for cancel/progress state.
 
 ### hh site structure (WIP)
 
@@ -61,7 +61,7 @@ always in the API field mapping, not scrolling.
 1. User selects a vacancy in popup → content script collects all resume URLs from the current hh.kz responses page
 2. For each URL: content script fetches the resume page (authenticated via hh.kz session cookies), extracts text, POSTs to `POST /api/screen`
 3. Backend calls `ai.screen_resume()` → stores result in SQLite
-4. Dashboard at `http://localhost:8000` shows all candidates grouped by category with AI comments and gap questions
+4. Dashboard at `http://localhost:8001` shows all candidates grouped by category with AI comments and gap questions
 5. Recruiter marks candidates → bulk reject (content script clicks HH UI) or bulk send to Huntflow (opens tabs)
 
 ### Candidate statuses

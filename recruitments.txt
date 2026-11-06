@@ -41,7 +41,7 @@ CHROME EXTENSION (JavaScript)
 chrome.runtime      — обмен сообщениями между popup, content script и background
 chrome.tabs         — управление вкладками (открытие резюме, определение активной вкладки)
 chrome.storage.session — хранение прогресса скрининга и состояния отмены
-fetch (browser)     — HTTP-запросы к backend (http://localhost:8000) и к hh.kz
+fetch (browser)     — HTTP-запросы к backend (http://localhost:8001) и к hh.kz
 DOMParser           — парсинг HTML резюме на стороне браузера
 
 
@@ -50,4 +50,4 @@ DOMParser           — парсинг HTML резюме на стороне б�
 
 1. Скопируйте .env.example в .env и добавьте GEMINI_API_KEY
 2. pip install -r backend/requirements.txt
-3. Запустите: start.bat  (или вручную: cd backend && python -m uvicorn main:app --port 8000 --reload)
+3. Запустите: start.bat  (или вручную: cd backend && python -m uvicorn main:app --port 8001 --reload)
